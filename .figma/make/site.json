@@ -1,0 +1,10 @@
+{
+  "description": "Plan and optimize daily deliveries with route maps, vehicle assignments, stop sequences, and exception alerts for small-business logistics teams.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
