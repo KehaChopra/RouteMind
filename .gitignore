@@ -1,4 +1,5 @@
 node_modules/
+.route-mind/
 dist/
 build/
 .cache/

@@ -3,12 +3,16 @@ export type Order = {
   customer: string
   address: string
   window: string
+  windowStart: string
+  windowEnd: string
   priority: "High" | "Standard" | "Low"
   load: string
   loadValue: number
   driver: string
   status: "Delivered" | "In transit" | "Scheduled" | "Unassigned" | "Exception"
   service: string
+  serviceMinutes: number
+  parcelCount: number
   date: string
 }
 
@@ -111,12 +115,16 @@ export const initialOrders: Order[] = [
     customer: "Khurana Foods",
     address: "18 Central Market, Sector 17",
     window: "09:00–09:30 AM",
+    windowStart: "09:00",
+    windowEnd: "09:30",
     priority: "High",
     load: "2 parcels",
+    parcelCount: 2,
     loadValue: 18,
     driver: "Maya Sharma",
     status: "Delivered",
     service: "10 min",
+    serviceMinutes: 10,
     date: "2026-10-29",
   },
   {
@@ -124,12 +132,16 @@ export const initialOrders: Order[] = [
     customer: "Riverside Pharmacy",
     address: "42 Riverside Road",
     window: "09:45–10:15 AM",
+    windowStart: "09:45",
+    windowEnd: "10:15",
     priority: "High",
     load: "4 parcels",
+    parcelCount: 4,
     loadValue: 34,
     driver: "Maya Sharma",
     status: "In transit",
     service: "12 min",
+    serviceMinutes: 12,
     date: "2026-10-29",
   },
   {
@@ -137,12 +149,16 @@ export const initialOrders: Order[] = [
     customer: "West End Studio",
     address: "7 Ashok Lane, West End",
     window: "10:30–11:00 AM",
+    windowStart: "10:30",
+    windowEnd: "11:00",
     priority: "Standard",
     load: "1 parcel",
+    parcelCount: 1,
     loadValue: 8,
     driver: "Maya Sharma",
     status: "Scheduled",
     service: "8 min",
+    serviceMinutes: 8,
     date: "2026-10-29",
   },
   {
@@ -150,12 +166,16 @@ export const initialOrders: Order[] = [
     customer: "Garden House",
     address: "31 Garden Avenue",
     window: "11:15–11:45 AM",
+    windowStart: "11:15",
+    windowEnd: "11:45",
     priority: "Standard",
     load: "3 parcels",
+    parcelCount: 3,
     loadValue: 21,
     driver: "Maya Sharma",
     status: "Scheduled",
     service: "10 min",
+    serviceMinutes: 10,
     date: "2026-10-29",
   },
   {
@@ -163,12 +183,16 @@ export const initialOrders: Order[] = [
     customer: "Aster Printworks",
     address: "114 Mill Street",
     window: "09:30–10:30 AM",
+    windowStart: "09:30",
+    windowEnd: "10:30",
     priority: "Standard",
     load: "5 parcels",
+    parcelCount: 5,
     loadValue: 47,
     driver: "Arjun Mehta",
     status: "In transit",
     service: "15 min",
+    serviceMinutes: 15,
     date: "2026-10-29",
   },
   {
@@ -176,12 +200,16 @@ export const initialOrders: Order[] = [
     customer: "Northfield Cafe",
     address: "5 Northfield Square",
     window: "10:45–11:15 AM",
+    windowStart: "10:45",
+    windowEnd: "11:15",
     priority: "Low",
     load: "2 parcels",
+    parcelCount: 2,
     loadValue: 14,
     driver: "Riya Kapoor",
     status: "Scheduled",
     service: "8 min",
+    serviceMinutes: 8,
     date: "2026-10-29",
   },
   {
@@ -189,12 +217,16 @@ export const initialOrders: Order[] = [
     customer: "Mehra Textiles",
     address: "88 Lakeview Crescent",
     window: "09:00–09:20 AM",
+    windowStart: "09:00",
+    windowEnd: "09:20",
     priority: "High",
     load: "6 parcels",
+    parcelCount: 6,
     loadValue: 52,
     driver: "Unassigned",
     status: "Exception",
     service: "15 min",
+    serviceMinutes: 15,
     date: "2026-10-29",
   },
   {
@@ -202,12 +234,16 @@ export const initialOrders: Order[] = [
     customer: "Oakline Furnishings",
     address: "16 Industrial Estate",
     window: "12:00–01:00 PM",
+    windowStart: "12:00",
+    windowEnd: "13:00",
     priority: "Standard",
     load: "1 pallet",
+    parcelCount: 1,
     loadValue: 118,
     driver: "Unassigned",
     status: "Unassigned",
     service: "20 min",
+    serviceMinutes: 20,
     date: "2026-10-29",
   },
   {
@@ -215,12 +251,16 @@ export const initialOrders: Order[] = [
     customer: "Holland Medical",
     address: "55 Holland Park Road",
     window: "01:30–02:00 PM",
+    windowStart: "13:30",
+    windowEnd: "14:00",
     priority: "High",
     load: "3 parcels",
+    parcelCount: 3,
     loadValue: 26,
     driver: "Dev Malhotra",
     status: "Scheduled",
     service: "10 min",
+    serviceMinutes: 10,
     date: "2026-10-29",
   },
 ]

@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from "react"
+import { createOrder, listOrders, type OrderDraft } from "./api"
 import {
   Driver,
   historyRuns,
@@ -157,7 +158,7 @@ const paths: Record<IconName, React.ReactNode> = {
   ),
 }
 
-function Icon({ name, size = 18 }: { name: IconName size?: number }) {
+function Icon({ name, size = 18 }: { name: IconName, size?: number }) {
   return (
     <svg
       aria-hidden="true"
@@ -210,7 +211,7 @@ const pageTitles: Record<Page, string> = {
 
 const navGroups: {
   label: string
-  items: { page: Page label: string icon: IconName }[]
+  items: { page: Page, label: string, icon: IconName }[]
 }[] = [
   {
     label: "Workspace",
@@ -249,7 +250,7 @@ function Brand() {
 function Status({ value }: { value: string }) {
   return (
     <span
-      className={`status status-${value.toLowerCase().replaceAll(" ", "-")}`}
+      className={`status status-${value.toLowerCase().replace(/ /g, "-")}`}
     >
       <i />
       {value}
@@ -941,12 +942,12 @@ function DataTable({
   )
 }
 
-function OrderDrawer({ order, onClose }: { order: Order onClose: () => void }) {
+function OrderDrawer({ order, onClose }: { order: Order, onClose: () => void }) {
   return (
     <Drawer onClose={onClose} subtitle={order.customer} title={order.id}>
       <div className="drawer-status">
         <Status value={order.status} />
-        <span>Delivery on 29 October 2026</span>
+        <span>Delivery on {order.date}</span>
       </div>
       <DetailSection title="Customer & delivery">
         <Detail label="Customer" value={order.customer} />
@@ -961,27 +962,13 @@ function OrderDrawer({ order, onClose }: { order: Order onClose: () => void }) {
         />
         <Detail label="Priority" value={order.priority} />
         <Detail label="Assigned driver" value={order.driver} />
-        <Detail label="Delivery date" value="Thursday, 29 October 2026" />
+        <Detail label="Delivery date" value={order.date} />
       </DetailSection>
-      <div className="drawer-callout">
-        <Icon name="info" />
-        <p>
-          This prototype uses illustrative order and assignment data. Changes
-          are stored only in this session.
-        </p>
-      </div>
-      <div className="drawer-actions">
-        <Button>
-          <Icon name="edit" size={16} />
-          Edit order
-        </Button>
-        <Button variant="primary">Assign to route</Button>
-      </div>
     </Drawer>
   )
 }
 
-function Detail({ label, value }: { label: string value: string }) {
+function Detail({ label, value }: { label: string, value: string }) {
   return (
     <div className="detail">
       <span>{label}</span>
@@ -1005,74 +992,76 @@ function DetailSection({
 }
 
 function NewOrderModal({
+  date,
   onClose,
   onSave,
 }: {
+  date: string
   onClose: () => void
-  onSave: (order: Order) => void
+  onSave: (draft: OrderDraft) => Promise<void>
 }) {
-  const [customer, setCustomer] = useState("")
-  const [address, setAddress] = useState("")
-  const [attempted, setAttempted] = useState(false)
-  const submit = (e: FormEvent) => {
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState("")
+  const submit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
-    setAttempted(true)
-    if (!customer.trim() || !address.trim()) return
-    onSave({
-      id: `RM-${1091 + Math.floor(Math.random() * 50)}`,
-      customer,
-      address,
-      window: "01:00–02:00 PM",
-      priority: "Standard",
-      load: "1 parcel",
-      loadValue: 10,
-      driver: "Unassigned",
-      status: "Unassigned",
-      service: "10 min",
-      date: "2026-10-29",
-    })
+    if (saving) return
+    const fields = new FormData(e.currentTarget)
+    setSaving(true)
+    setError("")
+    try {
+      await onSave({
+        customer: String(fields.get("customer")),
+        address: String(fields.get("address")),
+        date: String(fields.get("date")),
+        priority: fields.get("priority") as OrderDraft["priority"],
+        windowStart: String(fields.get("windowStart")),
+        windowEnd: String(fields.get("windowEnd")),
+        parcelCount: Number(fields.get("parcelCount")),
+        loadValue: Number(fields.get("loadValue")),
+        serviceMinutes: Number(fields.get("serviceMinutes")),
+      })
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "Could not save the order.")
+      setSaving(false)
+    }
   }
   return (
     <Modal
-      onClose={onClose}
+      onClose={() => { if (!saving) onClose() }}
       subtitle="Add a delivery and its planning requirements."
       title="New order"
     >
       <form className="form" onSubmit={submit}>
         <div className="form-grid">
-          <label className={attempted && !customer ? "invalid" : ""}>
+          <label>
             <span>Customer name *</span>
             <input
-              onChange={(e) => setCustomer(e.target.value)}
+              maxLength={120}
+              name="customer"
               placeholder="e.g. Northfield Cafe"
-              value={customer}
+              required
             />
-            {attempted && !customer && (
-              <small>Customer name is required.</small>
-            )}
           </label>
           <label>
             <span>Order ID</span>
             <input disabled value="Generated on save" />
           </label>
-          <label className={`span-2 ${attempted && !address ? "invalid" : ""}`}>
+          <label className="span-2">
             <span>Delivery address *</span>
             <input
-              onChange={(e) => setAddress(e.target.value)}
+              maxLength={300}
+              name="address"
               placeholder="Street, area, city"
-              value={address}
+              required
             />
-            {attempted && !address && (
-              <small>Delivery address is required.</small>
-            )}
           </label>
           <label>
             <span>Delivery date</span>
-            <input type="date" value="2026-10-29" readOnly />
+            <input defaultValue={date} name="date" required type="date" />
           </label>
           <label>
             <span>Priority</span>
-            <select>
+            <select name="priority">
               <option>Standard</option>
               <option>High</option>
               <option>Low</option>
@@ -1080,29 +1069,30 @@ function NewOrderModal({
           </label>
           <label>
             <span>Window starts</span>
-            <input type="time" defaultValue="13:00" />
+            <input defaultValue="13:00" name="windowStart" required type="time" />
           </label>
           <label>
             <span>Window ends</span>
-            <input type="time" defaultValue="14:00" />
+            <input defaultValue="14:00" name="windowEnd" required type="time" />
           </label>
           <label>
-            <span>Parcel load</span>
-            <input min="1" type="number" defaultValue="1" />
+            <span>Parcel count</span>
+            <input defaultValue="1" min="1" name="parcelCount" required type="number" />
+          </label>
+          <label>
+            <span>Total weight (kg)</span>
+            <input min="0.01" name="loadValue" required step="0.01" type="number" />
           </label>
           <label>
             <span>Service time</span>
-            <select>
-              <option>10 minutes</option>
-              <option>15 minutes</option>
-              <option>20 minutes</option>
-            </select>
+            <input defaultValue="10" max="1440" min="1" name="serviceMinutes" required type="number" />
           </label>
         </div>
+        {error && <p role="alert">{error}</p>}
         <div className="modal-actions">
-          <Button onClick={onClose}>Cancel</Button>
-          <Button type="submit" variant="primary">
-            Create order
+          <Button disabled={saving} onClick={onClose}>Cancel</Button>
+          <Button disabled={saving} type="submit" variant="primary">
+            {saving ? "Saving…" : "Create order"}
           </Button>
         </div>
       </form>
@@ -1111,17 +1101,26 @@ function NewOrderModal({
 }
 
 function OrdersPage({
+  date,
   orders,
   setOrders,
   globalSearch,
+  loading,
+  loadError,
+  onRetry,
 }: {
+  date: string
   orders: Order[]
   setOrders: React.Dispatch<React.SetStateAction<Order[]>>
   globalSearch: string
+  loading: boolean
+  loadError: string
+  onRetry: () => void
 }) {
   const [search, setSearch] = useState(globalSearch)
   const [status, setStatus] = useState("All statuses")
   const [priority, setPriority] = useState("All priorities")
+  const [filterDate, setFilterDate] = useState("")
   const [selected, setSelected] = useState<Order | null>(null)
   const [newOpen, setNewOpen] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -1131,10 +1130,16 @@ function OrdersPage({
         .toLowerCase()
         .includes(search.toLowerCase()) &&
       (status === "All statuses" || o.status === status) &&
-      (priority === "All priorities" || o.priority === priority),
+      (priority === "All priorities" || o.priority === priority) &&
+      (!filterDate || o.date === filterDate),
   )
-  const save = (order: Order) => {
+  const save = async (draft: OrderDraft) => {
+    const order = await createOrder(draft)
     setOrders((current) => [order, ...current])
+    setSearch("")
+    setStatus("All statuses")
+    setPriority("All priorities")
+    setFilterDate("")
     setNewOpen(false)
     setSaved(true)
     window.setTimeout(() => setSaved(false), 2200)
@@ -1145,12 +1150,19 @@ function OrdersPage({
         title="Orders"
         subtitle="Manage incoming deliveries and their requirements."
         actions={
-          <Button onClick={() => setNewOpen(true)} variant="primary">
+          <Button disabled={loading || Boolean(loadError)} onClick={() => setNewOpen(true)} variant="primary">
             <Icon name="plus" size={16} />
             New Order
           </Button>
         }
       />
+      {loading && <p role="status">Loading orders…</p>}
+      {loadError && (
+        <div>
+          <p role="alert">{loadError}</p>
+          <Button onClick={onRetry}>Retry</Button>
+        </div>
+      )}
       {saved && (
         <div className="success-banner">
           <Icon name="check" />
@@ -1207,7 +1219,8 @@ function OrdersPage({
           <input
             aria-label="Delivery date"
             type="date"
-            defaultValue="2026-10-29"
+            onChange={(event) => setFilterDate(event.target.value)}
+            value={filterDate}
           />
           <span className="result-count">{filtered.length} orders</span>
         </div>
@@ -1232,7 +1245,7 @@ function OrdersPage({
             <span className={`priority priority-${o.priority.toLowerCase()}`}>
               {o.priority}
             </span>,
-            o.load,
+            `${o.loadValue} kg`,
             o.driver,
             <Status value={o.status} />,
             <Icon name="chevron" size={15} />,
@@ -1243,7 +1256,7 @@ function OrdersPage({
         <OrderDrawer onClose={() => setSelected(null)} order={selected} />
       )}
       {newOpen && (
-        <NewOrderModal onClose={() => setNewOpen(false)} onSave={save} />
+        <NewOrderModal date={date} onClose={() => setNewOpen(false)} onSave={save} />
       )}
     </div>
   )
@@ -2234,7 +2247,10 @@ export default function App() {
   const [page, setPage] = useState<Page>(pageFromHash)
   const [date, setDate] = useState("2026-10-29")
   const [globalSearch, setGlobalSearch] = useState("")
-  const [orders, setOrders] = useState(initialOrders)
+  const [orders, setOrders] = useState<Order[]>([])
+  const [ordersLoading, setOrdersLoading] = useState(true)
+  const [ordersError, setOrdersError] = useState("")
+  const [ordersRequest, setOrdersRequest] = useState(0)
   const [drivers, setDrivers] = useState(initialDrivers)
   const [vehicles, setVehicles] = useState(initialVehicles)
   const [settings, setSettings] = useState<Settings>({
@@ -2248,6 +2264,16 @@ export default function App() {
     exceptions: true,
     compact: false,
   })
+  useEffect(() => {
+    const controller = new AbortController()
+    listOrders(controller.signal)
+      .then((records) => { if (!controller.signal.aborted) setOrders(records) })
+      .catch(() => {
+        if (!controller.signal.aborted) setOrdersError("Could not load orders. Check that the RouteMind API is running.")
+      })
+      .finally(() => { if (!controller.signal.aborted) setOrdersLoading(false) })
+    return () => controller.abort()
+  }, [ordersRequest])
   useEffect(() => {
     const handler = () => setPage(pageFromHash())
     window.addEventListener("hashchange", handler)
@@ -2329,7 +2355,15 @@ export default function App() {
           {page === "planner" && <PlannerPage date={date} setDate={setDate} />}
           {page === "orders" && (
             <OrdersPage
+              date={date}
               globalSearch={globalSearch}
+              loadError={ordersError}
+              loading={ordersLoading}
+              onRetry={() => {
+                setOrdersError("")
+                setOrdersLoading(true)
+                setOrdersRequest((request) => request + 1)
+              }}
               orders={orders}
               setOrders={setOrders}
             />
