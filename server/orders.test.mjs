@@ -5,7 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
 import { createApp } from "./app.mjs"
-import { openOrders } from "./orders.mjs"
+import { openDatabase } from "./database.mjs"
 
 test("orders API keeps entered values across restarts and rejects reversed delivery windows", async () => {
   const directory = mkdtempSync(join(tmpdir(), "route-mind-test-"))
@@ -24,8 +24,8 @@ test("orders API keeps entered values across restarts and rejects reversed deliv
   let id
   try {
     for (const phase of ["create", "reopen"]) {
-      const orders = openOrders(file)
-      const server = createApp(orders).listen(0, "127.0.0.1")
+      const database = openDatabase(file)
+      const server = createApp(database).listen(0, "127.0.0.1")
       try {
         await once(server, "listening")
         const url = `http://127.0.0.1:${server.address().port}/api/orders`
@@ -63,7 +63,7 @@ test("orders API keeps entered values across restarts and rejects reversed deliv
         }
       } finally {
         await new Promise((resolve) => server.close(resolve))
-        orders.close()
+        database.close()
       }
     }
   } finally {

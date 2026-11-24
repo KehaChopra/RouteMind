@@ -10,7 +10,7 @@ RouteMind is a logistics operations dashboard prototype for planning daily deliv
 - **Fleet:** Review vehicle and driver information and add fleet entries.
 - **Tracking and analytics:** Explore the tracking, reporting, and optimization history views.
 
-The Orders screen reads and creates orders through an Express API and SQLite. The database starts with demo orders. The map, route optimization and remaining dashboard views still use illustrative data.
+The Orders and Drivers & Vehicles screens read and create records through an Express API and SQLite. The database starts with demo orders and fleet records. Vehicles can be paired with drivers. The map, route optimization, and remaining dashboard views still use illustrative data.
 
 ## Getting started
 
@@ -32,7 +32,7 @@ In a second terminal from the same directory, start the dashboard:
 pnpm dev
 ```
 
-The API listens on port 3001. Vite proxies `/api` to it. Orders are stored in `.route-mind/orders.sqlite` by default. Set `ROUTEMIND_DB` to use a different database file.
+The API listens on port 3001. Vite proxies `/api` to it. Orders and fleet records are stored in `.route-mind/orders.sqlite` by default. Set `ROUTEMIND_DB` to use a different database file.
 
 Vite prints the local development URL when the server starts. To create and preview a production build:
 
@@ -41,7 +41,7 @@ pnpm build
 pnpm preview
 ```
 
-Keep the API running while using the preview. Run `pnpm test` to check order creation, validation, and persistence across restarts.
+Keep the API running while using the preview. Run `pnpm test` to check API validation, fleet assignments, and persistence across restarts.
 
 To format the project with the configured formatter:
 

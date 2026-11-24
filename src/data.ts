@@ -25,6 +25,8 @@ export type Driver = {
   assigned: number
   completed: number
   shift: string
+  shiftStart: string
+  shiftEnd: string
   phone: string
   email: string
   eta: string
@@ -37,6 +39,7 @@ export type Vehicle = {
   load: number
   status: "In service" | "Available" | "Maintenance"
   driver: string
+  driverId: string | null
   operational: string
 }
 
@@ -275,6 +278,8 @@ export const initialDrivers: Driver[] = [
     assigned: 7,
     completed: 2,
     shift: "08:00 AM–04:00 PM",
+    shiftStart: "08:00",
+    shiftEnd: "16:00",
     phone: "+91 98765 40218",
     email: "maya@routemind.demo",
     eta: "09:47 AM",
@@ -288,6 +293,8 @@ export const initialDrivers: Driver[] = [
     assigned: 6,
     completed: 3,
     shift: "08:00 AM–04:00 PM",
+    shiftStart: "08:00",
+    shiftEnd: "16:00",
     phone: "+91 98765 11842",
     email: "arjun@routemind.demo",
     eta: "09:52 AM",
@@ -301,6 +308,8 @@ export const initialDrivers: Driver[] = [
     assigned: 5,
     completed: 1,
     shift: "08:30 AM–04:30 PM",
+    shiftStart: "08:30",
+    shiftEnd: "16:30",
     phone: "+91 98765 72019",
     email: "riya@routemind.demo",
     eta: "10:05 AM",
@@ -314,6 +323,8 @@ export const initialDrivers: Driver[] = [
     assigned: 6,
     completed: 0,
     shift: "09:00 AM–05:00 PM",
+    shiftStart: "09:00",
+    shiftEnd: "17:00",
     phone: "+91 98765 34071",
     email: "dev@routemind.demo",
     eta: "10:12 AM",
@@ -327,6 +338,8 @@ export const initialDrivers: Driver[] = [
     assigned: 0,
     completed: 0,
     shift: "10:00 AM–06:00 PM",
+    shiftStart: "10:00",
+    shiftEnd: "18:00",
     phone: "+91 98765 55340",
     email: "neel@routemind.demo",
     eta: "—",
@@ -341,6 +354,7 @@ export const initialVehicles: Vehicle[] = [
     load: 130,
     status: "In service",
     driver: "Maya Sharma",
+    driverId: "DRV-01",
     operational: "Ready",
   },
   {
@@ -350,6 +364,7 @@ export const initialVehicles: Vehicle[] = [
     load: 205,
     status: "In service",
     driver: "Arjun Mehta",
+    driverId: "DRV-02",
     operational: "Ready",
   },
   {
@@ -359,6 +374,7 @@ export const initialVehicles: Vehicle[] = [
     load: 130,
     status: "In service",
     driver: "Riya Kapoor",
+    driverId: "DRV-03",
     operational: "Ready",
   },
   {
@@ -368,6 +384,7 @@ export const initialVehicles: Vehicle[] = [
     load: 81,
     status: "Available",
     driver: "Dev Malhotra",
+    driverId: "DRV-04",
     operational: "Ready",
   },
   {
@@ -377,6 +394,7 @@ export const initialVehicles: Vehicle[] = [
     load: 0,
     status: "Maintenance",
     driver: "Unassigned",
+    driverId: null,
     operational: "Inspection due",
   },
 ]

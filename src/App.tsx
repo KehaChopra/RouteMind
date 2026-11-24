@@ -1,11 +1,19 @@
 import { FormEvent, useEffect, useMemo, useState } from "react"
-import { createOrder, listOrders, type OrderDraft } from "./api"
+import {
+  createDriver,
+  createOrder,
+  createVehicle,
+  listFleet,
+  listOrders,
+  type DriverDraft,
+  type OrderDraft,
+  type VehicleDraft,
+} from "./api"
 import {
   Driver,
   historyRuns,
   initialDrivers,
   initialOrders,
-  initialVehicles,
   Order,
   Route,
   routes,
@@ -1264,119 +1272,109 @@ function OrdersPage({
 
 function AddFleetModal({
   type,
+  availableDrivers,
   onClose,
   onDriver,
   onVehicle,
 }: {
   type: "Drivers" | "Vehicles"
+  availableDrivers: Driver[]
   onClose: () => void
-  onDriver: (d: Driver) => void
-  onVehicle: (v: Vehicle) => void
+  onDriver: (driver: DriverDraft) => Promise<void>
+  onVehicle: (vehicle: VehicleDraft) => Promise<void>
 }) {
-  const [name, setName] = useState("")
-  const [attempted, setAttempted] = useState(false)
-  const submit = (e: FormEvent) => {
-    e.preventDefault()
-    setAttempted(true)
-    if (!name) return
-    if (type === "Drivers")
-      onDriver({
-        id: `DRV-0${initialDrivers.length + 1}`,
-        name,
-        initials: name
-          .split(" ")
-          .map((n) => n[0])
-          .join("")
-          .slice(0, 2),
-        status: "Available",
-        route: "Not assigned",
-        assigned: 0,
-        completed: 0,
-        shift: "09:00 AM–05:00 PM",
-        phone: "+91 98765 00000",
-        email: `${name.toLowerCase().replace(" ", ".")}@routemind.demo`,
-        eta: "—",
-      })
-    else
-      onVehicle({
-        id: name.toUpperCase(),
-        type: "Delivery van",
-        capacity: 180,
-        load: 0,
-        status: "Available",
-        driver: "Unassigned",
-        operational: "Ready",
-      })
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState("")
+  const isDriver = type === "Drivers"
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (saving) return
+    const fields = new FormData(event.currentTarget)
+    setSaving(true)
+    setError("")
+    try {
+      if (isDriver) {
+        await onDriver({
+          name: String(fields.get("name")),
+          phone: String(fields.get("phone")),
+          shiftStart: String(fields.get("shiftStart")),
+          shiftEnd: String(fields.get("shiftEnd")),
+        })
+      } else {
+        await onVehicle({
+          registration: String(fields.get("registration")),
+          type: String(fields.get("type")),
+          capacity: Number(fields.get("capacity")),
+          driverId: String(fields.get("driverId")) || null,
+        })
+      }
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "Could not save the fleet record.")
+      setSaving(false)
+    }
   }
   return (
     <Modal
-      onClose={onClose}
-      subtitle={
-        type === "Drivers"
-          ? "Create an available driver profile."
-          : "Add a vehicle to the operating fleet."
-      }
-      title={type === "Drivers" ? "Add driver" : "Add vehicle"}
+      onClose={() => { if (!saving) onClose() }}
+      subtitle={isDriver ? "Create an available driver profile." : "Add a vehicle to the operating fleet."}
+      title={isDriver ? "Add driver" : "Add vehicle"}
     >
       <form className="form" onSubmit={submit}>
         <div className="form-grid">
-          {type === "Drivers" ? (
+          {isDriver ? (
             <>
-              <label
-                className={`span-2 ${attempted && !name ? "invalid" : ""}`}
-              >
-                <span>Full name *</span>
-                <input
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Driver name"
-                />
-                {attempted && !name && <small>Driver name is required.</small>}
+              <label className="span-2">
+                <span>Full name</span>
+                <input maxLength={120} name="name" placeholder="Driver name" required />
               </label>
-              <label>
+              <label className="span-2">
                 <span>Phone</span>
-                <input placeholder="+91 98765 00000" />
+                <input maxLength={40} name="phone" placeholder="+91 98765 00000" type="tel" />
               </label>
               <label>
-                <span>Shift</span>
-                <select>
-                  <option>09:00 AM–05:00 PM</option>
-                  <option>08:00 AM–04:00 PM</option>
-                </select>
+                <span>Shift starts</span>
+                <input defaultValue="09:00" name="shiftStart" required type="time" />
+              </label>
+              <label>
+                <span>Shift ends</span>
+                <input defaultValue="17:00" name="shiftEnd" required type="time" />
               </label>
             </>
           ) : (
             <>
-              <label
-                className={`span-2 ${attempted && !name ? "invalid" : ""}`}
-              >
-                <span>Registration identifier *</span>
-                <input
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g. HR-26-AB-1234"
-                />
-                {attempted && !name && (
-                  <small>Vehicle identifier is required.</small>
-                )}
+              <label className="span-2">
+                <span>Registration identifier</span>
+                <input maxLength={24} name="registration" placeholder="e.g. HR-26-AB-1234" required />
               </label>
               <label>
                 <span>Vehicle type</span>
-                <select>
+                <select name="type">
                   <option>Delivery van</option>
                   <option>Mini truck</option>
                   <option>Mini van</option>
                 </select>
               </label>
               <label>
-                <span>Maximum capacity</span>
-                <input defaultValue="180" type="number" />
+                <span>Maximum capacity (kg)</span>
+                <input defaultValue="180" min="0.01" name="capacity" required step="0.01" type="number" />
+              </label>
+              <label className="span-2">
+                <span>Assigned driver</span>
+                <select name="driverId">
+                  <option value="">Unassigned</option>
+                  {availableDrivers.map((driver) => (
+                    <option key={driver.id} value={driver.id}>{driver.name} ({driver.id})</option>
+                  ))}
+                </select>
               </label>
             </>
           )}
         </div>
+        {error && <p role="alert">{error}</p>}
         <div className="modal-actions">
-          <Button onClick={onClose}>Cancel</Button>
-          <Button type="submit" variant="primary">
-            Save {type === "Drivers" ? "driver" : "vehicle"}
+          <Button disabled={saving} onClick={onClose}>Cancel</Button>
+          <Button disabled={saving} type="submit" variant="primary">
+            {saving ? "Saving…" : isDriver ? "Save driver" : "Save vehicle"}
           </Button>
         </div>
       </form>
@@ -1389,11 +1387,17 @@ function FleetPage({
   setDrivers,
   vehicles,
   setVehicles,
+  loading,
+  loadError,
+  onRetry,
 }: {
   drivers: Driver[]
   setDrivers: React.Dispatch<React.SetStateAction<Driver[]>>
   vehicles: Vehicle[]
   setVehicles: React.Dispatch<React.SetStateAction<Vehicle[]>>
+  loading: boolean
+  loadError: string
+  onRetry: () => void
 }) {
   const [tab, setTab] = useState<"Drivers" | "Vehicles">("Drivers")
   const [selected, setSelected] = useState<Driver | Vehicle | null>(null)
@@ -1404,12 +1408,19 @@ function FleetPage({
         title="Drivers & Vehicles"
         subtitle="Manage fleet availability, capacity, and route assignments."
         actions={
-          <Button onClick={() => setAdding(true)} variant="primary">
+          <Button disabled={loading || Boolean(loadError)} onClick={() => setAdding(true)} variant="primary">
             <Icon name="plus" size={16} />
             Add {tab === "Drivers" ? "Driver" : "Vehicle"}
           </Button>
         }
       />
+      {loading && <p role="status">Loading fleet…</p>}
+      {loadError && (
+        <div>
+          <p role="alert">{loadError}</p>
+          <Button onClick={onRetry}>Retry</Button>
+        </div>
+      )}
       <div className="tabs">
         <button
           className={tab === "Drivers" ? "active" : ""}
@@ -1429,7 +1440,7 @@ function FleetPage({
           <>
             <div>
               <span>On route</span>
-              <strong>3</strong>
+              <strong>{drivers.filter((driver) => driver.status === "On route").length}</strong>
             </div>
             <div>
               <span>Available</span>
@@ -1439,11 +1450,11 @@ function FleetPage({
             </div>
             <div>
               <span>Deliveries assigned</span>
-              <strong>24</strong>
+              <strong>{drivers.reduce((total, driver) => total + driver.assigned, 0)}</strong>
             </div>
             <div>
               <span>Completed today</span>
-              <strong>6</strong>
+              <strong>{drivers.reduce((total, driver) => total + driver.completed, 0)}</strong>
             </div>
           </>
         ) : (
@@ -1601,13 +1612,16 @@ function FleetPage({
       )}
       {adding && (
         <AddFleetModal
+          availableDrivers={drivers.filter((driver) => !vehicles.some((vehicle) => vehicle.driverId === driver.id))}
           onClose={() => setAdding(false)}
-          onDriver={(d) => {
-            setDrivers((x) => [...x, d])
+          onDriver={async (draft) => {
+            const driver = await createDriver(draft)
+            setDrivers((current) => [...current, driver])
             setAdding(false)
           }}
-          onVehicle={(v) => {
-            setVehicles((x) => [...x, v])
+          onVehicle={async (draft) => {
+            const vehicle = await createVehicle(draft)
+            setVehicles((current) => [...current, vehicle])
             setAdding(false)
           }}
           type={tab}
@@ -2251,8 +2265,11 @@ export default function App() {
   const [ordersLoading, setOrdersLoading] = useState(true)
   const [ordersError, setOrdersError] = useState("")
   const [ordersRequest, setOrdersRequest] = useState(0)
-  const [drivers, setDrivers] = useState(initialDrivers)
-  const [vehicles, setVehicles] = useState(initialVehicles)
+  const [drivers, setDrivers] = useState<Driver[]>([])
+  const [vehicles, setVehicles] = useState<Vehicle[]>([])
+  const [fleetLoading, setFleetLoading] = useState(true)
+  const [fleetError, setFleetError] = useState("")
+  const [fleetRequest, setFleetRequest] = useState(0)
   const [settings, setSettings] = useState<Settings>({
     business: "RouteMind Demo Logistics",
     address: "12 Commerce Avenue, Chandigarh",
@@ -2274,6 +2291,20 @@ export default function App() {
       .finally(() => { if (!controller.signal.aborted) setOrdersLoading(false) })
     return () => controller.abort()
   }, [ordersRequest])
+  useEffect(() => {
+    const controller = new AbortController()
+    listFleet(controller.signal)
+      .then((fleet) => {
+        if (controller.signal.aborted) return
+        setDrivers(fleet.drivers)
+        setVehicles(fleet.vehicles)
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setFleetError("Could not load the fleet. Check that the RouteMind API is running.")
+      })
+      .finally(() => { if (!controller.signal.aborted) setFleetLoading(false) })
+    return () => controller.abort()
+  }, [fleetRequest])
   useEffect(() => {
     const handler = () => setPage(pageFromHash())
     window.addEventListener("hashchange", handler)
@@ -2371,12 +2402,19 @@ export default function App() {
           {page === "fleet" && (
             <FleetPage
               drivers={drivers}
+              loadError={fleetError}
+              loading={fleetLoading}
+              onRetry={() => {
+                setFleetError("")
+                setFleetLoading(true)
+                setFleetRequest((request) => request + 1)
+              }}
               setDrivers={setDrivers}
               setVehicles={setVehicles}
               vehicles={vehicles}
             />
           )}
-          {page === "tracking" && <TrackingPage drivers={drivers} />}
+          {page === "tracking" && <TrackingPage drivers={initialDrivers} />}
           {page === "analytics" && <AnalyticsPage />}
           {page === "history" && <HistoryPage />}
           {page === "settings" && (

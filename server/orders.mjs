@@ -1,14 +1,10 @@
-import { DatabaseSync } from "node:sqlite"
 import { initialOrders } from "../src/data.ts"
+import { isTime } from "./validation.mjs"
 
 function isDate(value) {
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
   const date = new Date(value)
   return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value
-}
-
-function isTime(value) {
-  return typeof value === "string" && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value)
 }
 
 export function validateOrder(input) {
@@ -41,45 +37,34 @@ const insertSql = `INSERT INTO orders (
   loadValue, serviceMinutes, driver, status
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`
 
-export function openOrders(filename) {
-  const db = new DatabaseSync(filename)
-  db.exec("PRAGMA busy_timeout = 5000")
-  db.exec("BEGIN IMMEDIATE")
-  try {
-    if (db.prepare("PRAGMA user_version").get().user_version === 0) {
-      db.exec(`
-        CREATE TABLE orders (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          customer TEXT NOT NULL,
-          address TEXT NOT NULL,
-          date TEXT NOT NULL,
-          priority TEXT NOT NULL,
-          windowStart TEXT NOT NULL,
-          windowEnd TEXT NOT NULL,
-          parcelCount INTEGER NOT NULL,
-          loadValue REAL NOT NULL,
-          serviceMinutes INTEGER NOT NULL,
-          driver TEXT NOT NULL,
-          status TEXT NOT NULL
-        ) STRICT
-      `)
-      const insert = db.prepare(insertSql)
-      for (const order of initialOrders) {
-        insert.get(
-          Number(order.id.slice(3)), order.customer, order.address, order.date,
-          order.priority, order.windowStart, order.windowEnd, order.parcelCount,
-          order.loadValue, order.serviceMinutes, order.driver, order.status,
-        )
-      }
-      db.exec("PRAGMA user_version = 1")
-    }
-    db.exec("COMMIT")
-  } catch (error) {
-    db.exec("ROLLBACK")
-    db.close()
-    throw error
+export function createOrdersTable(db) {
+  db.exec(`
+    CREATE TABLE orders (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      customer TEXT NOT NULL,
+      address TEXT NOT NULL,
+      date TEXT NOT NULL,
+      priority TEXT NOT NULL,
+      windowStart TEXT NOT NULL,
+      windowEnd TEXT NOT NULL,
+      parcelCount INTEGER NOT NULL,
+      loadValue REAL NOT NULL,
+      serviceMinutes INTEGER NOT NULL,
+      driver TEXT NOT NULL,
+      status TEXT NOT NULL
+    ) STRICT
+  `)
+  const insert = db.prepare(insertSql)
+  for (const order of initialOrders) {
+    insert.get(
+      Number(order.id.slice(3)), order.customer, order.address, order.date,
+      order.priority, order.windowStart, order.windowEnd, order.parcelCount,
+      order.loadValue, order.serviceMinutes, order.driver, order.status,
+    )
   }
+}
 
+export function prepareOrders(db) {
   const list = db.prepare("SELECT * FROM orders ORDER BY id DESC")
   const insert = db.prepare(insertSql)
   return {
@@ -89,6 +74,5 @@ export function openOrders(filename) {
       input.windowStart, input.windowEnd, input.parcelCount, input.loadValue,
       input.serviceMinutes, "Unassigned", "Unassigned",
     )),
-    close: () => db.close(),
   }
 }

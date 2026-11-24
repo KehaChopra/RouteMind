@@ -1,7 +1,8 @@
 import express from "express"
+import { validateDriver, validateVehicle } from "./fleet.mjs"
 import { validateOrder } from "./orders.mjs"
 
-export function createApp(orders) {
+export function createApp({ orders, fleet }) {
   const app = express()
   app.use(express.json({ limit: "16kb" }))
 
@@ -13,6 +14,21 @@ export function createApp(orders) {
     const error = validateOrder(request.body)
     if (error) return response.status(400).json({ error })
     response.status(201).json(orders.create(request.body))
+  })
+
+  app.get("/api/fleet", (_request, response) => response.json(fleet.list()))
+
+  app.post("/api/drivers", (request, response) => {
+    const error = validateDriver(request.body)
+    if (error) return response.status(400).json({ error })
+    response.status(201).json(fleet.createDriver(request.body))
+  })
+
+  app.post("/api/vehicles", (request, response) => {
+    const error = validateVehicle(request.body)
+    if (error) return response.status(400).json({ error })
+    const result = fleet.createVehicle(request.body)
+    response.status(result.status).json(result.vehicle ?? { error: result.error })
   })
 
   app.use("/api", (_request, response) => {
