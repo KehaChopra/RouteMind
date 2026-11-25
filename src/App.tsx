@@ -7,6 +7,8 @@ import {
   getLatestPlan,
   listFleet,
   listOrders,
+  recordDeliveryEvent,
+  type DeliveryUpdate,
   type DriverDraft,
   type OrderDraft,
   type RoutePlan,
@@ -15,7 +17,6 @@ import {
 import {
   Driver,
   historyRuns,
-  initialDrivers,
   initialOrders,
   Order,
   Route,
@@ -722,36 +723,6 @@ function OverviewPage({
   )
 }
 
-const stopRows = [
-  ["01", "Depot", "Starting point", "08:30 AM", "—", "Completed"],
-  [
-    "02",
-    "RM-1042",
-    "Central Market",
-    "09:00–09:30 AM",
-    "2 parcels",
-    "Delivered",
-  ],
-  [
-    "03",
-    "RM-1057",
-    "Riverside Road",
-    "09:45–10:15 AM",
-    "4 parcels",
-    "In transit",
-  ],
-  ["04", "RM-1063", "West End", "10:30–11:00 AM", "1 parcel", "Scheduled"],
-  [
-    "05",
-    "RM-1071",
-    "Garden Avenue",
-    "11:15–11:45 AM",
-    "3 parcels",
-    "Scheduled",
-  ],
-  ["06", "RM-1088", "Holland Park", "12:10–12:40 PM", "2 parcels", "Scheduled"],
-]
-
 function PlannerPage({ date, setDate }: {
   date: string
   setDate: (date: string) => void
@@ -815,7 +786,7 @@ function PlannerPage({ date, setDate }: {
                 value={date}
               />
             </label>
-            <Button disabled={!date || loading || optimizing} onClick={optimize} variant="primary">
+            <Button disabled={!date || loading || optimizing || Boolean(plan?.event)} onClick={optimize} variant="primary">
               <Icon name="spark" size={16} />
               {optimizing ? "Optimizing…" : "Optimize Routes"}
             </Button>
@@ -826,6 +797,7 @@ function PlannerPage({ date, setDate }: {
         <span><Icon name="info" size={15} /> Demo travel estimates for sample addresses</span>
         {plan && <strong>Saved plan #{plan.id} · {plan.method}</strong>}
       </div>
+      {plan?.event && <p>This plan is in progress. Use Live Tracking to update the remaining stops.</p>}
       {error && <p role="alert">{error}</p>}
       {loading && <p role="status">Loading saved plan…</p>}
       {optimizing && <p role="status">Checking capacity, delivery windows, and driver shifts…</p>}
@@ -872,13 +844,13 @@ function PlannerPage({ date, setDate }: {
                 <div className="panel-head">
                   <div>
                     <h2>Stop sequence</h2>
-                    <p>{route.driverName} · Estimated depot return {route.returnAt}</p>
+                    <p>{route.driverName} · {route.returnAt ? `Estimated depot return ${route.returnAt}` : "Depot return falls outside the shift"}</p>
                   </div>
                 </div>
                 <DataTable
-                  headers={["Stop", "Order", "Delivery address", "ETA", "Delivery window", "Load"]}
+                  headers={["Stop", "Order", "Delivery address", "ETA", "Delivery window", "Delivered at", "Load"]}
                   rows={route.stops.map((stop, index) => [
-                    index + 1, stop.orderId, stop.address, stop.eta, stop.window, `${stop.loadKg} kg`,
+                    index + 1, stop.orderId, stop.address, stop.eta, stop.window, stop.completedAt ?? "—", `${stop.loadKg} kg`,
                   ])}
                 />
               </section>
@@ -1615,130 +1587,159 @@ function FleetPage({
   )
 }
 
-function TrackingPage({ drivers }: { drivers: Driver[] }) {
-  const active = drivers.filter((d) => d.route !== "Not assigned")
-  const [selected, setSelected] = useState(active[0])
-  const [filter, setFilter] = useState("All active")
-  const visible = active.filter(
-    (d) =>
-      filter === "All active" ||
-      (filter === "Delayed" ? d.name === "Riya Kapoor" : d.status === filter),
-  )
+function TrackingPage({ date, setDate, goToPlanner, onDelivered }: {
+  date: string
+  setDate: (date: string) => void
+  goToPlanner: () => void
+  onDelivered: (orderId: string, driver: string) => void
+}) {
+  const [plan, setPlan] = useState<RoutePlan | null>(null)
+  const [vehicle, setVehicle] = useState("")
+  const [loading, setLoading] = useState(Boolean(date))
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState("")
+  const [request, setRequest] = useState(0)
+  const route = plan?.routes.find((item) => item.vehicleId === vehicle) ?? plan?.routes[0]
+  const next = route?.stops.find((stop) => !stop.completedAt)
+
+  useEffect(() => {
+    if (!date) return
+    const controller = new AbortController()
+    getLatestPlan(date, controller.signal)
+      .then((saved) => { if (!controller.signal.aborted) setPlan(saved) })
+      .catch(() => {
+        if (!controller.signal.aborted) setError("Could not load the plan. Check that the RouteMind API is running.")
+      })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false) })
+    return () => controller.abort()
+  }, [date, request])
+
+  const changeDate = (nextDate: string) => {
+    if (nextDate === date) return
+    setPlan(null)
+    setVehicle("")
+    setError("")
+    setLoading(Boolean(nextDate))
+    setDate(nextDate)
+  }
+
+  const reload = () => {
+    setLoading(true)
+    setError("")
+    setRequest((count) => count + 1)
+  }
+
+  const update = async (event: DeliveryUpdate) => {
+    if (!plan || !route || saving || loading) return
+    setSaving(true)
+    setError("")
+    try {
+      const revised = await recordDeliveryEvent(date, plan.id, route.vehicleId, event)
+      setPlan(revised)
+      if (event.type === "delivered") onDelivered(event.orderId, route.driverName)
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "Could not save the delivery update.")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  let suggestedCompletion = ""
+  if (next) {
+    const [hours, minutes] = next.eta.split(":").map(Number)
+    const finish = Math.min(1439, hours * 60 + minutes + (next.serviceMinutes ?? 0))
+    suggestedCompletion = `${String(Math.floor(finish / 60)).padStart(2, "0")}:${String(finish % 60).padStart(2, "0")}`
+  }
+
   return (
     <div className="page tracking-page">
       <PageHeader
         title="Live Tracking"
-        subtitle="Monitor delivery execution using simulated prototype positions."
+        subtitle="Record delivery updates and recalculate pending stops using the demo travel estimates."
         actions={
-          <>
-            <select
-              className="select"
-              onChange={(e) => setFilter(e.target.value)}
-              value={filter}
-            >
-              <option>All active</option>
-              <option>On route</option>
-              <option>Delayed</option>
-              <option>Available</option>
-            </select>
-            <span className="simulation-label">
-              <i />
-              Simulated data
-            </span>
-          </>
+          <label className="date-control">
+            <Icon name="calendar" size={16} />
+            <input aria-label="Tracking date" disabled={saving} onChange={(event) => changeDate(event.target.value)} type="date" value={date} />
+          </label>
         }
       />
-      <div className="tracking-workspace">
-        <section className="panel driver-panel">
-          <div className="panel-head">
-            <div>
-              <h2>Active drivers</h2>
-              <p>{visible.length} shown · prototype status</p>
-            </div>
+      {loading && <p role="status">Loading the latest plan…</p>}
+      {saving && <p role="status">Saving the delivery update…</p>}
+      {error && <div><p role="alert">{error}</p><Button disabled={loading || saving} onClick={reload}>Reload plan</Button></div>}
+      {!loading && !error && !plan && (
+        <div>
+          <p>{date ? "Create a route plan for this date to start recording deliveries." : "Choose a tracking date."}</p>
+          <Button onClick={goToPlanner}>Open Route Planner</Button>
+        </div>
+      )}
+      {plan && (
+        <>
+          <div className="planner-note">
+            <strong>Saved plan #{plan.id}{plan.previousPlanId ? ` · Revised from #${plan.previousPlanId}` : ""}</strong>
+            {plan.event && (
+              <span>{plan.event.type === "delay"
+                ? `${plan.event.delayMinutes}-minute delay recorded for ${plan.event.vehicleId}`
+                : `${plan.event.orderId} delivered at ${plan.event.at}`}</span>
+            )}
           </div>
-          <div className="driver-list">
-            {visible.map((d, i) => {
-              const route = routes.find((r) => r.driver === d.name)!
-              return (
-                <button
-                  className={selected.id === d.id ? "selected" : ""}
-                  key={d.id}
-                  onClick={() => setSelected(d)}
-                >
-                  <div className="driver-list-top">
-                    <span className="avatar">{d.initials}</span>
-                    <div>
-                      <strong>{d.name}</strong>
-                      <span>
-                        {d.route} · {route?.current}
-                      </span>
-                    </div>
-                    <Status
-                      value={d.name === "Riya Kapoor" ? "Delayed" : d.status}
-                    />
-                  </div>
-                  <div className="driver-progress">
-                    <div>
-                      <i
-                        style={{
-                          width: `${(route.completed / route.stops) * 100}%`,
-                        }}
-                      />
-                    </div>
-                    <span>
-                      {route.completed} of {route.stops} stops
-                    </span>
-                  </div>
-                </button>
-              )
-            })}
-          </div>
-        </section>
-        <CityMap
-          onSelectRoute={(id) => setSelected(active[id - 1])}
-          selectedRoute={Number(selected.route.split(" ")[1]) || 1}
-          tracking
-        />
-        <section className="panel selected-driver">
-          <div className="selected-driver-head">
-            <span className="avatar large">{selected.initials}</span>
-            <div>
-              <h2>{selected.name}</h2>
-              <p>
-                {selected.route} · Next ETA {selected.eta}
-              </p>
-            </div>
-          </div>
-          <div className="tracking-stats">
-            <div>
-              <span>Progress</span>
-              <strong>
-                {routes.find((r) => r.driver === selected.name)?.completed || 0}
-                /{routes.find((r) => r.driver === selected.name)?.stops || 0}
-              </strong>
-            </div>
-            <div>
-              <span>Remaining</span>
-              <strong>
-                {routes.find((r) => r.driver === selected.name)?.distance}
-              </strong>
-            </div>
-          </div>
-          <h3>Remaining stops</h3>
-          <div className="mini-sequence">
-            {stopRows.slice(2, 6).map((s, i) => (
-              <div key={s[1]}>
-                <span>{i + 1}</span>
+          {route ? (
+            <section className="panel stop-panel">
+              <div className="panel-head">
                 <div>
-                  <strong>{s[2]}</strong>
-                  <small>{s[3]}</small>
+                  <h2>Delivery stops</h2>
+                  <p>{route.driverName} · {route.returnAt ? `Estimated depot return ${route.returnAt}` : "Depot return falls outside the shift"}</p>
                 </div>
-                <Status value={i === 0 ? "In transit" : "Upcoming"} />
+                <label>
+                  Vehicle{" "}
+                  <select className="select" disabled={saving || loading} value={route.vehicleId} onChange={(event) => setVehicle(event.target.value)}>
+                    {plan.routes.map((item) => (
+                      <option key={item.vehicleId} value={item.vehicleId}>{item.vehicleId} · {item.driverName}</option>
+                    ))}
+                  </select>
+                </label>
               </div>
-            ))}
-          </div>
-        </section>
-      </div>
+              <DataTable
+                headers={["Stop", "Order", "Address", "ETA", "Delivery window", "Delivered at"]}
+                rows={route.stops.map((stop, index) => [
+                  index + 1, stop.orderId, stop.address, stop.eta, stop.window, stop.completedAt ?? "Pending",
+                ])}
+              />
+              {next ? (
+                <div className="tracking-actions" key={`${plan.id}-${route.vehicleId}`}>
+                  <form className="form" onSubmit={(event) => {
+                    event.preventDefault()
+                    const fields = new FormData(event.currentTarget)
+                    void update({ type: "delivered", orderId: next.orderId, at: String(fields.get("at")) })
+                  }}>
+                    <label>
+                      <span>Completion time for {next.orderId}</span>
+                      <input defaultValue={suggestedCompletion} name="at" required type="time" />
+                    </label>
+                    <Button disabled={saving || loading} type="submit" variant="primary">Mark next stop delivered</Button>
+                  </form>
+                  <form className="form" onSubmit={(event) => {
+                    event.preventDefault()
+                    const fields = new FormData(event.currentTarget)
+                    void update({ type: "delay", minutes: Number(fields.get("minutes")) })
+                  }}>
+                    <label>
+                      <span>Delay at the {route.stops.some((stop) => stop.completedAt) ? "last delivered stop" : "depot"} (minutes)</span>
+                      <input defaultValue="15" max="720" min="1" name="minutes" required type="number" />
+                    </label>
+                    <Button disabled={saving || loading} type="submit">Report delay</Button>
+                  </form>
+                </div>
+              ) : <p className="tracking-actions">No pending stops for this vehicle.</p>}
+            </section>
+          ) : <p>No vehicles have assigned stops on this plan.</p>}
+          {plan.unassigned.length > 0 && (
+            <section className="panel">
+              <div className="panel-head"><div><h2>Unassigned orders ({plan.unassigned.length})</h2></div></div>
+              <DataTable headers={["Order", "Address", "Reason"]} rows={plan.unassigned.map((order) => [order.orderId, order.address, order.reason])} />
+            </section>
+          )}
+        </>
+      )}
     </div>
   )
 }
@@ -2398,7 +2399,16 @@ export default function App() {
               vehicles={vehicles}
             />
           )}
-          {page === "tracking" && <TrackingPage drivers={initialDrivers} />}
+          {page === "tracking" && <TrackingPage
+              date={date}
+              setDate={setDate}
+              goToPlanner={() => goTo("planner")}
+              onDelivered={(orderId, driver) => {
+                setOrders((records) => records.map((order) =>
+                  order.id === orderId ? { ...order, status: "Delivered", driver } : order,
+                ))
+              }}
+            />}
           {page === "analytics" && <AnalyticsPage />}
           {page === "history" && <HistoryPage />}
           {page === "settings" && (

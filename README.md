@@ -8,9 +8,10 @@ RouteMind is a logistics operations dashboard prototype for planning daily deliv
 - **Route planner:** Generate and save a dated plan with vehicle assignments, stop sequences, arrival estimates, and unassigned orders.
 - **Orders:** Browse and filter orders, inspect order details, and add an order.
 - **Fleet:** Review vehicle and driver information and add fleet entries.
-- **Tracking and analytics:** Explore the tracking, reporting, and optimization history views.
+- **Live Tracking:** Mark the next stop delivered and record delays against the saved plan.
+- **Analytics and history:** Explore the illustrative reporting and optimization history views.
 
-Orders, fleet records, and generated plans are stored through an Express API in SQLite. The database starts with demo orders and fleet records. The overview map, tracking, analytics, and Optimization History still use illustrative data.
+Orders, fleet records, generated plans, and delivery events are stored through an Express API in SQLite. The database starts with demo orders and fleet records. The overview map, analytics, and Optimization History still use illustrative data.
 
 ## Getting started
 
@@ -50,6 +51,14 @@ Keep the API running while using the preview. Run `pnpm test` to check API valid
 3. To test capacity, add an order on that date for **7 Ashok Lane, West End**, with a 10:30–11:00 window and a load of **141 kg**. In the seeded fleet the only available vehicle paired with an available driver can carry 140 kg. Re-run the planner and check the order's reason in **Unassigned orders**.
 
 The greedy insertion planner prioritizes high-priority orders, then earlier deadlines. It checks total vehicle load, time windows for starting delivery service, service durations, and the driver's return to the depot before the shift ends. Travel comes from a fixed demo grid covering the sample addresses. An address outside that grid is reported with a reason. Each run saves a plan snapshot without changing order execution status.
+
+## Try replanning after a delay
+
+1. Generate a plan for **29 October 2026**, then open **Live Tracking** for the same date.
+2. Enter the next stop’s completion time and click **Mark next stop delivered**. The order becomes **Delivered** on the Orders screen.
+3. Report a delay and compare the remaining ETAs and the unassigned list. Each update saves a new plan version that preserves completed stops and their recorded times.
+
+The demo uses the depot or the last completed stop as the driver’s location. It adds delays to the driver’s last recorded time, or the shift start if the driver has yet to complete a stop. Replanning keeps pending deliveries on the original vehicle and preserves their relative order. Stops that can no longer fit go to the unassigned list for review.
 
 To format the project with the configured formatter:
 

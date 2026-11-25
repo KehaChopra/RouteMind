@@ -16,6 +16,14 @@ export type RoutePlan = {
   method: string
   travelSource: string
   orderCount: number
+  previousPlanId?: number
+  event?: {
+    vehicleId: string
+    type: "delivered" | "delay"
+    orderId: string | null
+    at: string
+    delayMinutes: number | null
+  }
   routes: {
     vehicleId: string
     driverId: string
@@ -24,13 +32,16 @@ export type RoutePlan = {
     loadKg: number
     distanceKm: number
     durationMinutes: number
-    returnAt: string
+    returnAt: string | null
+    readyAt?: string
     stops: {
       orderId: string
       address: string
       eta: string
       window: string
       loadKg: number
+      serviceMinutes?: number
+      completedAt?: string
     }[]
   }[]
   unassigned: { orderId: string, address: string, reason: string }[]
@@ -81,4 +92,12 @@ export function getLatestPlan(date: string, signal: AbortSignal) {
 
 export function generatePlan(date: string) {
   return post<RoutePlan>("/api/plans", { date })
+}
+
+export type DeliveryUpdate =
+  | { type: "delivered", orderId: string, at: string }
+  | { type: "delay", minutes: number }
+
+export function recordDeliveryEvent(date: string, planId: number, vehicleId: string, event: DeliveryUpdate) {
+  return post<RoutePlan>("/api/delivery-events", { date, planId, vehicleId, ...event })
 }

@@ -1,4 +1,5 @@
 import { DatabaseSync } from "node:sqlite"
+import { createDeliveryEventsTable, prepareDelivery } from "./delivery.mjs"
 import { createFleetTables, prepareFleet } from "./fleet.mjs"
 import { createOrdersTable, prepareOrders } from "./orders.mjs"
 import { createPlansTable, preparePlans } from "./plans.mjs"
@@ -12,12 +13,14 @@ export function openDatabase(filename) {
     if (version < 1) createOrdersTable(db)
     if (version < 2) createFleetTables(db)
     if (version < 3) createPlansTable(db)
-    if (version < 3) db.exec("PRAGMA user_version = 3")
+    if (version < 4) createDeliveryEventsTable(db)
+    if (version < 4) db.exec("PRAGMA user_version = 4")
     db.exec("COMMIT")
   } catch (error) {
     db.exec("ROLLBACK")
     db.close()
     throw error
   }
-  return { orders: prepareOrders(db), fleet: prepareFleet(db), plans: preparePlans(db), close: () => db.close() }
+  const stores = { orders: prepareOrders(db), fleet: prepareFleet(db), plans: preparePlans(db) }
+  return { ...stores, delivery: prepareDelivery(db, stores), close: () => db.close() }
 }

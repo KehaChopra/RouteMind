@@ -1099,6 +1099,20 @@ h1 {
   margin-bottom: 14px;
 }
 
+.tracking-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 14px;
+}
+
+.tracking-actions form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px;
+}
+
 @media (max-width: 900px) {
   .planner-results {
     grid-template-columns: minmax(0, 1fr);

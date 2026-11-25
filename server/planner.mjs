@@ -4,19 +4,19 @@ const priorityRank = { High: 0, Standard: 1, Low: 2 }
 const pendingStatuses = new Set(["Scheduled", "Unassigned", "Exception"])
 const method = "Greedy insertion"
 
-function minutes(time) {
+export function minutes(time) {
   const [hours, mins] = time.split(":").map(Number)
   return hours * 60 + mins
 }
 
-function clock(time) {
+export function clock(time) {
   const hours = String(Math.floor(time / 60)).padStart(2, "0")
   return `${hours}:${String(time % 60).padStart(2, "0")}`
 }
 
-function schedule(driver, orders) {
-  let time = minutes(driver.shiftStart)
-  let location = depot
+export function schedule(driver, orders, from = depot, readyAt = minutes(driver.shiftStart)) {
+  let time = readyAt
+  let location = from
   let distanceKm = 0
   const stops = []
   for (const order of orders) {
@@ -29,6 +29,7 @@ function schedule(driver, orders) {
       eta: clock(time),
       window: order.window,
       loadKg: order.loadValue,
+      serviceMinutes: order.serviceMinutes,
     })
     time += order.serviceMinutes
     distanceKm += leg.distanceKm
@@ -42,7 +43,7 @@ function schedule(driver, orders) {
     stops,
     returnAt: clock(returnTime),
     distanceKm: distanceKm + back.distanceKm,
-    durationMinutes: returnTime - minutes(driver.shiftStart),
+    durationMinutes: returnTime - readyAt,
   }
 }
 
@@ -109,6 +110,8 @@ export function buildPlan(date, allOrders, { drivers, vehicles }) {
       vehicleId: route.vehicle.id,
       driverId: route.driver.id,
       driverName: route.driver.name,
+      shiftStart: route.driver.shiftStart,
+      shiftEnd: route.driver.shiftEnd,
       capacityKg: route.vehicle.capacity,
       loadKg: Number(route.loadKg.toFixed(8)),
       ...route.schedule,

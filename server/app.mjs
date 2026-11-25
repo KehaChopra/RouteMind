@@ -1,10 +1,10 @@
 import express from "express"
+import { validateDeliveryEvent } from "./delivery.mjs"
 import { validateDriver, validateVehicle } from "./fleet.mjs"
 import { validateOrder } from "./orders.mjs"
-import { buildPlan } from "./planner.mjs"
 import { isDate } from "./validation.mjs"
 
-export function createApp({ orders, fleet, plans }) {
+export function createApp({ orders, fleet, plans, delivery }) {
   const app = express()
   app.use(express.json({ limit: "16kb" }))
 
@@ -42,8 +42,15 @@ export function createApp({ orders, fleet, plans }) {
   app.post("/api/plans", (request, response) => {
     const date = request.body?.date
     if (!isDate(date)) return response.status(400).json({ error: "Enter a valid planning date." })
-    const plan = buildPlan(date, orders.list(), fleet.list())
-    response.status(201).json(plans.save(plan))
+    const result = delivery.generate(date)
+    response.status(result.status).json(result.plan ?? { error: result.error })
+  })
+
+  app.post("/api/delivery-events", (request, response) => {
+    const error = validateDeliveryEvent(request.body)
+    if (error) return response.status(400).json({ error })
+    const result = delivery.record(request.body)
+    response.status(result.status).json(result.plan ?? { error: result.error })
   })
 
   app.use("/api", (_request, response) => {
