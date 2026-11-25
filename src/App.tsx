@@ -3,10 +3,13 @@ import {
   createDriver,
   createOrder,
   createVehicle,
+  generatePlan,
+  getLatestPlan,
   listFleet,
   listOrders,
   type DriverDraft,
   type OrderDraft,
+  type RoutePlan,
   type VehicleDraft,
 } from "./api"
 import {
@@ -749,170 +752,151 @@ const stopRows = [
   ["06", "RM-1088", "Holland Park", "12:10–12:40 PM", "2 parcels", "Scheduled"],
 ]
 
-function PlannerPage({
-  date,
-  setDate,
-}: {
+function PlannerPage({ date, setDate }: {
   date: string
   setDate: (date: string) => void
 }) {
-  const [selected, setSelected] = useState(1)
+  const [plan, setPlan] = useState<RoutePlan | null>(null)
+  const [selected, setSelected] = useState("")
+  const [loading, setLoading] = useState(Boolean(date))
   const [optimizing, setOptimizing] = useState(false)
-  const [result, setResult] = useState(false)
-  const [saved, setSaved] = useState(false)
-  const optimize = () => {
-    setOptimizing(true)
-    setResult(false)
-    window.setTimeout(() => {
-      setOptimizing(false)
-      setResult(true)
-      setSaved(false)
-    }, 900)
+  const [error, setError] = useState("")
+  const route = plan?.routes.find((item) => item.vehicleId === selected) ?? plan?.routes[0]
+
+  useEffect(() => {
+    if (!date) return
+    const controller = new AbortController()
+    getLatestPlan(date, controller.signal)
+      .then((saved) => { if (!controller.signal.aborted) setPlan(saved) })
+      .catch(() => {
+        if (!controller.signal.aborted) setError("Could not load the saved plan. Check that the RouteMind API is running.")
+      })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false) })
+    return () => controller.abort()
+  }, [date])
+
+  const changeDate = (nextDate: string) => {
+    if (nextDate === date) return
+    setPlan(null)
+    setSelected("")
+    setError("")
+    setLoading(Boolean(nextDate))
+    setDate(nextDate)
   }
+
+  const optimize = async () => {
+    if (!date || optimizing || loading) return
+    setOptimizing(true)
+    setError("")
+    try {
+      setPlan(await generatePlan(date))
+      setSelected("")
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "Could not generate a route plan.")
+    } finally {
+      setOptimizing(false)
+    }
+  }
+
   return (
     <div className="page planner-page">
       <PageHeader
         title="Route Planner"
-        subtitle="Build feasible delivery routes for your fleet."
+        subtitle="Build delivery routes from saved orders and available driver–vehicle pairs."
         actions={
           <>
             <label className="date-control">
               <Icon name="calendar" size={16} />
               <input
-                onChange={(e) => setDate(e.target.value)}
+                aria-label="Planning date"
+                disabled={optimizing}
+                onChange={(event) => changeDate(event.target.value)}
                 type="date"
                 value={date}
               />
             </label>
-            <select className="select">
-              <option>Morning shift</option>
-              <option>Afternoon shift</option>
-            </select>
-            <Button onClick={() => setSaved(true)}>
-              <Icon name={saved ? "check" : "save"} size={16} />
-              {saved ? "Plan saved" : "Save Plan"}
-            </Button>
-            <Button disabled={optimizing} onClick={optimize} variant="primary">
-              <Icon name={optimizing ? "history" : "spark"} size={16} />
+            <Button disabled={!date || loading || optimizing} onClick={optimize} variant="primary">
+              <Icon name="spark" size={16} />
               {optimizing ? "Optimizing…" : "Optimize Routes"}
             </Button>
           </>
         }
       />
       <div className="planner-note">
-        <span>
-          <Icon name="info" size={15} />
-          Planner: Greedy + 2-opt{" "}
-          <span className="tooltip">
-            Constructs a starting route and improves the stop sequence while
-            checking constraints.
-          </span>
-        </span>
-        {result && (
-          <strong>
-            <Icon name="check" size={15} />
-            Route plan updated. Capacity and delivery-window checks passed for
-            assigned orders.
-          </strong>
-        )}
+        <span><Icon name="info" size={15} /> Demo travel estimates for sample addresses</span>
+        {plan && <strong>Saved plan #{plan.id} · {plan.method}</strong>}
       </div>
-      <div className="planner-workspace">
-        <CityMap onSelectRoute={setSelected} selectedRoute={selected} />
-        <section className="panel route-inspector">
-          <div className="panel-head">
-            <div>
-              <h2>Planned routes</h2>
-              <p>4 vehicles assigned · 24 stops</p>
-            </div>
-            <span className="count-label">4 routes</span>
-          </div>
-          <div className="route-card-list">
-            {routes.map((route) => (
-              <button
-                className={`route-row ${
-                  selected === route.id ? "selected" : ""
-                }`}
-                key={route.id}
-                onClick={() => setSelected(route.id)}
-              >
-                <i className={`route-bar tone-${route.tone}`} />
-                <div className="route-row-top">
-                  <div className="avatar">
-                    {route.driver
-                      .split(" ")
-                      .map((n) => n[0])
-                      .join("")}
-                  </div>
+      {error && <p role="alert">{error}</p>}
+      {loading && <p role="status">Loading saved plan…</p>}
+      {optimizing && <p role="status">Checking capacity, delivery windows, and driver shifts…</p>}
+      {!plan && !loading && !optimizing && !error && (
+        <p>{date ? "Select Optimize Routes to create the first plan for this date." : "Choose a planning date."}</p>
+      )}
+      {plan && (
+        <>
+          <div className="planner-results">
+            <section className="panel route-inspector">
+              <div className="panel-head">
+                <div>
+                  <h2>Planned routes</h2>
+                  <p>{plan.orderCount - plan.unassigned.length} of {plan.orderCount} orders assigned</p>
+                </div>
+              </div>
+              <div className="route-card-list">
+                {plan.routes.length === 0 && <p>No routes generated for this date.</p>}
+                {plan.routes.map((item) => (
+                  <button
+                    aria-pressed={route?.vehicleId === item.vehicleId}
+                    className={`route-row ${route?.vehicleId === item.vehicleId ? "selected" : ""}`}
+                    key={item.vehicleId}
+                    onClick={() => setSelected(item.vehicleId)}
+                  >
+                    <div className="route-row-top">
+                      <div>
+                        <strong>{item.driverName}</strong>
+                        <small>{item.vehicleId}</small>
+                      </div>
+                      <Icon name="chevron" size={16} />
+                    </div>
+                    <div className="route-row-stats">
+                      <span>{item.stops.length} stops</span>
+                      <span>{item.distanceKm} km</span>
+                      <span>{item.loadKg} / {item.capacityKg} kg</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </section>
+            {route && (
+              <section className="panel">
+                <div className="panel-head">
                   <div>
-                    <span>{route.label}</span>
-                    <strong>{route.driver}</strong>
-                    <small>{route.vehicle}</small>
+                    <h2>Stop sequence</h2>
+                    <p>{route.driverName} · Estimated depot return {route.returnAt}</p>
                   </div>
-                  <Icon name="chevron" size={16} />
                 </div>
-                <div className="route-row-stats">
-                  <span>
-                    <b>{route.stops}</b> stops
-                  </span>
-                  <span>{route.duration}</span>
-                  <span>{route.distance}</span>
-                </div>
-                <div className="capacity">
-                  <span>Capacity</span>
-                  <div>
-                    <i style={{ width: `${route.capacity}%` }} />
-                  </div>
-                  <b>{route.capacity}%</b>
-                </div>
-              </button>
-            ))}
+                <DataTable
+                  headers={["Stop", "Order", "Delivery address", "ETA", "Delivery window", "Load"]}
+                  rows={route.stops.map((stop, index) => [
+                    index + 1, stop.orderId, stop.address, stop.eta, stop.window, `${stop.loadKg} kg`,
+                  ])}
+                />
+              </section>
+            )}
           </div>
-        </section>
-      </div>
-      <section className="panel stop-panel">
-        <div className="panel-head">
-          <div>
-            <h2>{routes[selected - 1].label} · Stop sequence</h2>
-            <p>
-              {routes[selected - 1].driver} · Completed stops remain fixed
-              during replanning
-            </p>
-          </div>
-          <div className="validation-group">
-            <span>
-              <Icon name="check" size={14} />
-              Capacity valid
-            </span>
-            <span>
-              <Icon name="check" size={14} />
-              Windows valid
-            </span>
-          </div>
-        </div>
-        <DataTable
-          headers={[
-            "Stop",
-            "Order",
-            "Delivery location",
-            "Time window",
-            "Load",
-            "Status",
-          ]}
-          rows={stopRows.map((row) =>
-            row.map((cell, i) => (i === 5 ? <Status value={cell} /> : cell)),
+          {plan.unassigned.length > 0 && (
+            <section className="panel">
+              <div className="panel-head">
+                <div><h2>Unassigned orders ({plan.unassigned.length})</h2></div>
+              </div>
+              <DataTable
+                headers={["Order", "Delivery address", "Reason"]}
+                rows={plan.unassigned.map((order) => [order.orderId, order.address, order.reason])}
+              />
+            </section>
           )}
-        />
-      </section>
-      <section className="panel planner-exceptions">
-        <div>
-          <Icon name="warning" />
-          <span>
-            <strong>2 orders remain unassigned</strong>Constraint checks
-            prevented infeasible assignments.
-          </span>
-        </div>
-        <button className="text-link">Review exceptions</button>
-      </section>
+        </>
+      )}
     </div>
   )
 }

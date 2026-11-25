@@ -10,6 +10,32 @@ export type VehicleDraft = Pick<Vehicle, "type" | "capacity" | "driverId"> & {
   registration: string
 }
 
+export type RoutePlan = {
+  id: number
+  date: string
+  method: string
+  travelSource: string
+  orderCount: number
+  routes: {
+    vehicleId: string
+    driverId: string
+    driverName: string
+    capacityKg: number
+    loadKg: number
+    distanceKm: number
+    durationMinutes: number
+    returnAt: string
+    stops: {
+      orderId: string
+      address: string
+      eta: string
+      window: string
+      loadKg: number
+    }[]
+  }[]
+  unassigned: { orderId: string, address: string, reason: string }[]
+}
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init)
   if (!response.headers.get("content-type")?.includes("application/json")) {
@@ -47,4 +73,12 @@ export function createDriver(driver: DriverDraft) {
 
 export function createVehicle(vehicle: VehicleDraft) {
   return post<Vehicle>("/api/vehicles", vehicle)
+}
+
+export function getLatestPlan(date: string, signal: AbortSignal) {
+  return request<RoutePlan | null>(`/api/plans/latest?date=${encodeURIComponent(date)}`, { signal })
+}
+
+export function generatePlan(date: string) {
+  return post<RoutePlan>("/api/plans", { date })
 }

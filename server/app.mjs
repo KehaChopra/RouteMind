@@ -1,8 +1,10 @@
 import express from "express"
 import { validateDriver, validateVehicle } from "./fleet.mjs"
 import { validateOrder } from "./orders.mjs"
+import { buildPlan } from "./planner.mjs"
+import { isDate } from "./validation.mjs"
 
-export function createApp({ orders, fleet }) {
+export function createApp({ orders, fleet, plans }) {
   const app = express()
   app.use(express.json({ limit: "16kb" }))
 
@@ -29,6 +31,19 @@ export function createApp({ orders, fleet }) {
     if (error) return response.status(400).json({ error })
     const result = fleet.createVehicle(request.body)
     response.status(result.status).json(result.vehicle ?? { error: result.error })
+  })
+
+  app.get("/api/plans/latest", (request, response) => {
+    const { date } = request.query
+    if (!isDate(date)) return response.status(400).json({ error: "Enter a valid planning date." })
+    response.json(plans.latest(date))
+  })
+
+  app.post("/api/plans", (request, response) => {
+    const date = request.body?.date
+    if (!isDate(date)) return response.status(400).json({ error: "Enter a valid planning date." })
+    const plan = buildPlan(date, orders.list(), fleet.list())
+    response.status(201).json(plans.save(plan))
   })
 
   app.use("/api", (_request, response) => {

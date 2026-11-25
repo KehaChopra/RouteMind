@@ -1091,6 +1091,20 @@ h1 {
   display: block;
 }
 
+.planner-results {
+  display: grid;
+  grid-template-columns: minmax(225px, 1fr) minmax(0, 3fr);
+  align-items: start;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+@media (max-width: 900px) {
+  .planner-results {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .planner-workspace {
   display: grid;
   grid-template-columns: minmax(0, 2fr) minmax(330px, 0.8fr);
