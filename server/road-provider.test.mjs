@@ -5,6 +5,7 @@ import { join } from "node:path"
 import { test } from "node:test"
 import { openDatabase } from "./database.mjs"
 import { createRoadProvider } from "./road-provider.mjs"
+import { addTestVehicle } from "./test-fixtures.mjs"
 
 test("road planning uses provider estimates and reuses the saved matrix after restart", async () => {
   const directory = mkdtempSync(join(tmpdir(), "route-mind-road-test-"))
@@ -46,6 +47,7 @@ test("road planning uses provider estimates and reuses the saved matrix after re
     let first
     let second
     const db = openDatabase(filename, { roadProvider })
+    addTestVehicle(db)
     try {
       const draft = {
         customer: "Demo", date, priority: "Standard", parcelCount: 1,
@@ -59,6 +61,7 @@ test("road planning uses provider estimates and reuses the saved matrix after re
       assert.equal(result.status, 201)
       initial = result.plan
       assert.equal(initial.travelMode, "road")
+      assert.equal(initial.comparison.length, 2)
       const [route] = initial.routes
       assert.deepEqual(route.stops.map(({ orderId, eta }) => [orderId, eta]), [[first.id, "09:09"], [second.id, "09:26"]])
       assert.equal(route.distanceKm, 13.1)
@@ -88,6 +91,27 @@ test("road planning uses provider estimates and reuses the saved matrix after re
     }
   } finally {
     rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test("coordinate mode works without a road provider or sample records", async () => {
+  const db = openDatabase(":memory:", { depotCoordinates: "77.2,28.6" })
+  try {
+    addTestVehicle(db)
+    const date = "2026-11-01"
+    const order = db.orders.create({
+      customer: "Public library", address: "Library entrance", coordinates: "77.21,28.61", date,
+      priority: "High", parcelCount: 1, loadValue: 5, serviceMinutes: 10, windowStart: "09:00", windowEnd: "10:00",
+    })
+    const result = await db.delivery.generate(date, "coordinates", "graph")
+    assert.equal(result.status, 201)
+    assert.equal(result.plan.travelMode, "coordinates")
+    assert.match(result.plan.method, /GNN/)
+    assert.equal(result.plan.routes[0].stops[0].orderId, order.id)
+    assert.deepEqual(result.plan.routes[0].stops[0].coordinates, [77.21, 28.61])
+    assert.equal(result.plan.comparison.length, 2)
+  } finally {
+    db.close()
   }
 })
 

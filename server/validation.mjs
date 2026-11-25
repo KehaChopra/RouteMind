@@ -7,3 +7,15 @@ export function isDate(value) {
   const date = new Date(value)
   return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value
 }
+
+export function validPoint(point) {
+  return Array.isArray(point) && point.length === 2 &&
+    point.every(Number.isFinite) && Math.abs(point[0]) <= 180 && Math.abs(point[1]) <= 90
+}
+
+export function parseCoordinates(text) {
+  if (typeof text !== "string") return null
+  const parts = text.split(",").map((part) => part.trim())
+  const point = parts.every(Boolean) ? parts.map(Number) : null
+  return validPoint(point) ? point : null
+}

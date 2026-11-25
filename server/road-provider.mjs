@@ -1,17 +1,8 @@
 import { addressKey } from "./travel.mjs"
+import { parseCoordinates, validPoint } from "./validation.mjs"
 
 const origin = "https://api.heigit.org"
 const maxAddresses = 20
-
-function validPoint(point) {
-  return Array.isArray(point) && point.length === 2 &&
-    point.every(Number.isFinite) && Math.abs(point[0]) <= 180 && Math.abs(point[1]) <= 90
-}
-
-function parseDepot(text) {
-  const parts = text?.split(",").map((part) => part.trim())
-  return parts?.every(Boolean) ? parts.map(Number) : null
-}
 
 function square(values, size) {
   return Array.isArray(values) && values.length === size &&
@@ -20,10 +11,10 @@ function square(values, size) {
 }
 
 export function createRoadProvider({ apiKey, depot, fetcher = fetch }) {
-  const point = parseDepot(depot)
+  const point = parseCoordinates(depot)
   return async (addresses) => {
     if (!apiKey?.trim() || !validPoint(point)) {
-      return { status: 503, error: "Road routing needs a server API key and depot coordinates. Choose Demo grid or follow the README setup." }
+      return { status: 503, error: "Road routing needs a server API key and depot coordinates. Follow the README setup." }
     }
     const unique = new Map(addresses.map((address) => [addressKey(address), address.trim()]))
     if (unique.size > maxAddresses) {
@@ -72,9 +63,9 @@ export function createRoadProvider({ apiKey, depot, fetcher = fetch }) {
         const seconds = durations[from][to]
         return distance === null || seconds === null ? null : [distance, Math.ceil(seconds / 60)]
       }))
-      return { snapshot: { addresses: resolved.map(([address]) => address), legs } }
+      return { snapshot: { addresses: resolved.map(([address]) => address), locations, legs } }
     } catch {
-      return { status: 502, error: "Road travel estimates are temporarily unavailable. Try again or select Demo grid." }
+      return { status: 502, error: "Road travel estimates are temporarily unavailable. Try again shortly." }
     }
   }
 }

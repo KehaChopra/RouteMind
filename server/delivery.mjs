@@ -1,5 +1,5 @@
 import { buildPlan, clock, minutes, planningOrders, schedule } from "./planner.mjs"
-import { demoTravel, roadMatrixTravel } from "./travel.mjs"
+import { coordinateSnapshot, demoTravel, matrixTravel } from "./travel.mjs"
 import { isDate, isTime } from "./validation.mjs"
 
 export function createDeliveryEventsTable(db) {
@@ -71,7 +71,7 @@ export function validateDeliveryEvent(input) {
   return "Enter a valid completion time or a delay from 1 to 720 minutes."
 }
 
-export function prepareDelivery(db, { orders, fleet, plans }, roadProvider) {
+export function prepareDelivery(db, { orders, fleet, plans }, roadProvider, depotCoordinates) {
   const insertEvent = db.prepare(`
     INSERT INTO delivery_events (planId, vehicleId, type, orderId, at, delayMinutes)
     VALUES (?, ?, ?, ?, ?, ?)
@@ -93,27 +93,37 @@ export function prepareDelivery(db, { orders, fleet, plans }, roadProvider) {
   const inProgress = { status: 409, error: "This plan is already in progress. Update it from Live Tracking." }
 
   return {
-    generate: async (date, mode = "demo") => {
+    generate: async (date, mode = "demo", strategy = "greedy") => {
       if (mode === "demo") {
         return write(() => plans.latest(date)?.event ? inProgress :
-          { status: 201, plan: plans.save(buildPlan(date, orders.list(), fleet.list())) })
+          { status: 201, plan: plans.save(buildPlan(date, orders.list(), fleet.list(), demoTravel, strategy)) })
       }
       const previous = plans.latest(date)
       if (previous?.event) return inProgress
-      if (!roadProvider) return { status: 503, error: "Road routing is unavailable. Choose Demo grid or configure the provider." }
+      if (mode === "road" && !roadProvider) return { status: 503, error: "Road routing is unavailable. Configure the provider using the README." }
 
       const inputs = planningOrders(date, orders.list())
-      const result = await roadProvider(inputs.map((order) => order.address))
+      const result = mode === "road"
+        ? await roadProvider(inputs.map((order) => order.address))
+        : coordinateSnapshot(depotCoordinates, inputs)
       if (!result.snapshot) return result
 
       return write(() => {
         if (plans.latest(date)?.id !== previous?.id ||
           JSON.stringify(planningOrders(date, orders.list())) !== JSON.stringify(inputs)) {
-          return { status: 409, error: "The plan or its orders changed while loading road times. Try optimizing again." }
+          return { status: 409, error: "The plan or its orders changed while loading travel times. Try optimizing again." }
         }
         // Read fleet availability inside the write transaction because travel times don't depend on it.
-        const plan = buildPlan(date, inputs, fleet.list(), roadMatrixTravel(result.snapshot))
-        const saved = plans.save({ ...plan, travelMode: "road" })
+        const travel = matrixTravel(result.snapshot, mode)
+        const availableFleet = fleet.list()
+        const greedy = buildPlan(date, inputs, availableFleet, travel)
+        const graph = buildPlan(date, inputs, availableFleet, travel, "graph")
+        const comparison = [greedy, graph].map((candidate) => ({
+          method: candidate.method,
+          assigned: candidate.orderCount - candidate.unassigned.length,
+          distanceKm: Number(candidate.routes.reduce((sum, route) => sum + route.distanceKm, 0).toFixed(3)),
+        }))
+        const saved = plans.save({ ...(strategy === "graph" ? graph : greedy), travelMode: mode, comparison })
         plans.saveTravel(saved.id, result.snapshot)
         return { status: 201, plan: saved }
       })
@@ -129,11 +139,12 @@ export function prepareDelivery(db, { orders, fleet, plans }, roadProvider) {
       const driver = route.shiftEnd ? route : fleet.list().drivers.find((item) => item.id === route.driverId)
       if (!driver) return { status: 400, error: "The route’s driver shift is unavailable." }
       const originalPlanId = plan.travelPlanId ?? plan.id
-      const snapshot = plan.travelMode === "road" ? plans.loadTravel(originalPlanId) : null
-      if (plan.travelMode === "road" && !snapshot) {
-        return { status: 409, error: "The original road travel estimates could not be found." }
+      const hasMatrix = plan.travelMode === "road" || plan.travelMode === "coordinates"
+      const snapshot = hasMatrix ? plans.loadTravel(originalPlanId) : null
+      if (hasMatrix && !snapshot) {
+        return { status: 409, error: "The original travel estimates could not be found." }
       }
-      const travel = snapshot ? roadMatrixTravel(snapshot) : demoTravel
+      const travel = snapshot ? matrixTravel(snapshot, plan.travelMode) : demoTravel
 
       const previous = minutes(route.readyAt ?? driver.shiftStart)
       const completion = input.type === "delivered"
@@ -165,7 +176,7 @@ export function prepareDelivery(db, { orders, fleet, plans }, roadProvider) {
         date: plan.date,
         method: plan.method,
         travelSource: plan.travelSource,
-        ...(snapshot ? { travelMode: "road", travelPlanId: originalPlanId } : {}),
+        ...(snapshot ? { travelMode: plan.travelMode, travelPlanId: originalPlanId } : {}),
         orderCount: plan.orderCount,
         routes: plan.routes.map((item) => item === route ? revised.route : item),
         unassigned: [...plan.unassigned, ...revised.exceptions],

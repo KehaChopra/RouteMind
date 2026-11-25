@@ -3,14 +3,15 @@ import type { Driver, Order, Vehicle } from "./data"
 export type OrderDraft = Pick<Order,
   "customer" | "address" | "date" | "priority" | "windowStart" | "windowEnd" |
   "parcelCount" | "loadValue" | "serviceMinutes"
->
+> & { coordinates?: string | null }
 
 export type DriverDraft = Pick<Driver, "name" | "phone" | "shiftStart" | "shiftEnd">
 export type VehicleDraft = Pick<Vehicle, "type" | "capacity" | "driverId"> & {
   registration: string
 }
 
-export type TravelMode = "demo" | "road"
+export type TravelMode = "demo" | "road" | "coordinates"
+export type PlannerStrategy = "greedy" | "graph"
 
 export type RoutePlan = {
   id: number
@@ -19,6 +20,7 @@ export type RoutePlan = {
   method: string
   travelSource: string
   travelMode?: TravelMode
+  comparison?: { method: string, assigned: number, distanceKm: number }[]
   orderCount: number
   previousPlanId?: number
   event?: {
@@ -46,6 +48,7 @@ export type RoutePlan = {
       loadKg: number
       serviceMinutes?: number
       completedAt?: string
+      coordinates?: [number, number]
     }[]
   }[]
   unassigned: { orderId: string, address: string, reason: string }[]
@@ -122,8 +125,8 @@ export function getAnalytics(date: string, signal: AbortSignal) {
   return request<PlanAnalytics | null>(`/api/analytics?date=${encodeURIComponent(date)}`, { signal })
 }
 
-export function generatePlan(date: string, travelMode: TravelMode) {
-  return post<RoutePlan>("/api/plans", { date, travelMode })
+export function generatePlan(date: string, strategy: PlannerStrategy, travelMode: Exclude<TravelMode, "demo">) {
+  return post<RoutePlan>("/api/plans", { date, travelMode, strategy })
 }
 
 export type DeliveryUpdate =
@@ -132,4 +135,21 @@ export type DeliveryUpdate =
 
 export function recordDeliveryEvent(date: string, planId: number, vehicleId: string, event: DeliveryUpdate) {
   return post<RoutePlan>("/api/delivery-events", { date, planId, vehicleId, ...event })
+}
+
+export type CustomerTrackingStatus = {
+  orderId: string
+  date: string
+  window: string
+  status: "Awaiting scheduling" | "Scheduled" | "Delivered"
+  eta: string | null
+  completedAt: string | null
+}
+
+export function createTrackingLink(id: string) {
+  return post<{ token: string }>(`/api/orders/${encodeURIComponent(id)}/tracking-link`, {})
+}
+
+export function getCustomerTracking(token: string, signal: AbortSignal) {
+  return request<CustomerTrackingStatus>(`/api/customer-tracking/${encodeURIComponent(token)}`, { signal })
 }

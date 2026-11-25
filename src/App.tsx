@@ -1,33 +1,34 @@
-import { FormEvent, useEffect, useMemo, useState } from "react"
+import { FormEvent, useEffect, useState } from "react"
 import {
   createDriver,
   createOrder,
+  createTrackingLink,
   createVehicle,
   generatePlan,
   getAnalytics,
+  getCustomerTracking,
   getLatestPlan,
   listFleet,
   listOrders,
   listPlans,
   recordDeliveryEvent,
   type DeliveryUpdate,
+  type CustomerTrackingStatus,
   type DriverDraft,
   type OrderDraft,
   type RoutePlan,
+  type PlannerStrategy,
   type TravelMode,
   type VehicleDraft,
 } from "./api"
 import { comparePlans } from "./reporting"
 import {
   Driver,
-  initialOrders,
   Order,
-  Route,
-  routes,
   Vehicle,
 } from "./data"
 
-type Page = "overview" | "planner" | "orders" | "fleet" | "tracking" | "analytics" | "history" | "settings"
+type Page = "overview" | "planner" | "orders" | "fleet" | "tracking" | "analytics" | "history" | "customer"
 
 type IconName = "analytics" | "bell" | "calendar" | "check" | "chevron" | "clock" | "close" | "download" | "edit" | "fleet" | "history" | "info" | "locate" | "map" | "menu" | "minus" | "orders" | "overview" | "plus" | "route" | "save" | "search" | "settings" | "spark" | "tracking" | "truck" | "user" | "warning"
 
@@ -224,7 +225,7 @@ const pageTitles: Record<Page, string> = {
   tracking: "Live Tracking",
   analytics: "Analytics",
   history: "Optimization History",
-  settings: "Settings",
+  customer: "Delivery status",
 }
 
 const navGroups: {
@@ -246,7 +247,7 @@ const navGroups: {
     label: "Management",
     items: [
       { page: "history", label: "Optimization History", icon: "history" },
-      { page: "settings", label: "Settings", icon: "settings" },
+
     ],
   },
 ]
@@ -363,368 +364,41 @@ function Modal({
   )
 }
 
-const routeGeometry = [
-  {
-    id: 1,
-    d: "M105 354 C160 310 212 297 259 245 S333 163 397 185 S475 235 530 190 S607 112 700 142",
-    stops: [
-      [105, 354],
-      [259, 245],
-      [397, 185],
-      [530, 190],
-      [700, 142],
-    ],
-  },
-  {
-    id: 2,
-    d: "M105 354 C175 374 232 395 304 350 S392 288 457 310 S573 358 667 305 S733 260 786 270",
-    stops: [
-      [304, 350],
-      [457, 310],
-      [667, 305],
-      [786, 270],
-    ],
-  },
-  {
-    id: 3,
-    d: "M105 354 C83 280 92 217 145 180 S245 150 282 105 S345 55 418 78",
-    stops: [
-      [145, 180],
-      [282, 105],
-      [418, 78],
-    ],
-  },
-  {
-    id: 4,
-    d: "M105 354 C178 330 240 295 296 278 S370 236 432 250 S545 280 602 245 S700 190 780 198",
-    stops: [
-      [296, 278],
-      [432, 250],
-      [602, 245],
-      [780, 198],
-    ],
-  },
-]
-
-function CityMap({
-  selectedRoute = 1,
-  onSelectRoute,
-  tracking = false,
-  compact = false,
-}: {
-  selectedRoute?: number
-  onSelectRoute?: (id: number) => void
-  tracking?: boolean
-  compact?: boolean
-}) {
-  return (
-    <div className={`city-map ${compact ? "compact-map" : ""}`}>
-      <svg
-        aria-label="Illustrative city delivery route map"
-        preserveAspectRatio="xMidYMid slice"
-        viewBox="0 0 850 440"
-      >
-        <rect className="map-bg" width="850" height="440" />
-        <path
-          className="water"
-          d="M750-10c-55 82-30 132 17 192s24 151-55 270h138V-10Z"
-        />
-        <path className="park" d="M480 35h145l31 82-59 50-131-32Z" />
-        <path className="park" d="M24 264h120l51 61-33 96H29Z" />
-        <g className="buildings">
-          {Array.from({ length: 30 }).map((_, i) => (
-            <rect
-              key={i}
-              x={45 + (i % 6) * 110 + (i % 2) * 12}
-              y={30 + Math.floor(i / 6) * 78}
-              width={55 + (i % 3) * 11}
-              height={30 + (i % 2) * 10}
-              rx="3"
-            />
-          ))}
-        </g>
-        <g className="minor-streets">
-          {[85, 150, 220, 290, 365].map((y) => (
-            <path
-              d={`M-10 ${y} C190 ${y - 15} 380 ${y + 12} 860 ${y - 5}`}
-              key={y}
-            />
-          ))}
-          {[70, 160, 260, 355, 460, 575, 685].map((x) => (
-            <path
-              d={`M${x} -10 C${x - 15} 130 ${x + 18} 280 ${x + 5} 450`}
-              key={x}
-            />
-          ))}
-        </g>
-        <g className="major-streets">
-          <path d="M-20 280C130 267 210 220 324 217s222 40 336 14 133-50 210-52" />
-          <path d="M115-15c42 102 63 170 65 261s-15 127-3 207" />
-          <path d="M318-10c16 88 40 148 82 209s91 138 107 252" />
-          <path d="M535-10c-4 92-10 168 27 236s87 138 100 218" />
-        </g>
-        <g className="map-labels">
-          <text x="310" y="170">
-            CENTRAL MARKET
-          </text>
-          <text x="632" y="125">
-            RIVERSIDE
-          </text>
-          <text x="70" y="244">
-            WEST END
-          </text>
-          <text x="515" y="68">
-            HOLLAND PARK
-          </text>
-          <text x="500" y="405">
-            GARDEN AVENUE
-          </text>
-        </g>
-        <g className="route-lines">
-          {routeGeometry.map((route) => (
-            <path
-              className={`route-path route-${route.id} ${
-                selectedRoute === route.id ? "active" : ""
-              }`}
-              d={route.d}
-              key={route.id}
-              onClick={() => onSelectRoute?.(route.id)}
-            />
-          ))}
-        </g>
-        {routeGeometry.map((route) => (
-          <g
-            className={`map-stops route-stops-${route.id} ${
-              selectedRoute === route.id ? "active" : ""
-            }`}
-            key={route.id}
-          >
-            {route.stops.map(([x, y], index) => (
-              <g key={`${x}-${y}`}>
-                <circle cx={x} cy={y} r="11" />
-                <text x={x} y={y + 4}>
-                  {index + 1}
-                </text>
-              </g>
-            ))}
-          </g>
-        ))}
-        <g className="depot" transform="translate(105 354)">
-          <circle r="17" />
-          <path d="M-7 7V-6h14V7M-3 7V1h6v6M-9-6 0-12 9-6" />
-        </g>
-        {tracking && (
-          <g className="vehicle-marker" transform="translate(455 205)">
-            <circle r="17" />
-            <path d="M-8-4h10l5 5v7H-8ZM2-4V1h5M-4 8v2M4 8v2" />
-          </g>
-        )}
-      </svg>
-      <div className="map-overlay-title">
-        <span className="map-pulse" />
-        <div>
-          <strong>
-            {tracking
-              ? "Simulated route positions"
-              : "Today’s delivery network"}
-          </strong>
-          <small>
-            {tracking
-              ? "Position data updated for prototype"
-              : "24 orders · 4 planned routes"}
-          </small>
-        </div>
-      </div>
-      <div className="map-controls">
-        <button aria-label="Zoom in">
-          <Icon name="plus" size={16} />
-        </button>
-        <button aria-label="Zoom out">
-          <Icon name="minus" size={16} />
-        </button>
-        <button aria-label="Recenter">
-          <Icon name="locate" size={16} />
-        </button>
-      </div>
-      <div className="map-legend">
-        {routes.map((route) => (
-          <button
-            className={selectedRoute === route.id ? "selected" : ""}
-            key={route.id}
-            onClick={() => onSelectRoute?.(route.id)}
-          >
-            <i className={`tone-${route.tone}`} />
-            {route.label}
-          </button>
-        ))}
-      </div>
-      <small className="map-credit">
-        Illustrative map data · Prototype positions
-      </small>
-    </div>
-  )
-}
-
-function OverviewPage({
-  goTo,
-  date,
-  setDate,
-}: {
+function OverviewPage({ date, setDate, orders, ordersLoading, ordersError, goTo }: ReportDate & {
+  orders: Order[]
+  ordersLoading: boolean
+  ordersError: string
   goTo: (page: Page) => void
-  date: string
-  setDate: (date: string) => void
 }) {
+  const { data: plan, loading, error, retry } = useDatedReport(date, getLatestPlan)
+  const datedOrders = orders.filter((order) => order.date === date)
+  const completed = datedOrders.filter((order) => order.status === "Delivered").length
   return (
     <div className="page">
-      <PageHeader
-        title="Good morning, Alex"
-        subtitle="Here’s what’s happening with your deliveries today."
-        actions={
-          <>
-            <label className="date-control">
-              <Icon name="calendar" size={16} />
-              <input
-                onChange={(e) => setDate(e.target.value)}
-                type="date"
-                value={date}
-              />
-            </label>
-            <Button onClick={() => goTo("planner")} variant="primary">
-              Go to Route Planner <Icon name="chevron" size={16} />
-            </Button>
-          </>
-        }
-      />
-      <div className="metrics">
-        {[
-          ["Total Orders", "24", "Scheduled today", "orders"],
-          ["Active Routes", "4", "Across 4 drivers", "route"],
-          ["Deliveries Completed", "6", "18 remaining", "check"],
-          ["Need Attention", "2", "Constraint review", "warning"],
-        ].map(([label, value, note, icon], i) => (
-          <div
-            className={`metric ${i === 3 ? "metric-warning" : ""}`}
-            key={label}
-          >
-            <div className="metric-icon">
-              <Icon name={icon as IconName} />
-            </div>
-            <div>
-              <span>{label}</span>
-              <strong>{value}</strong>
-              <small>{note}</small>
-            </div>
-          </div>
-        ))}
-      </div>
-      <div className="overview-grid">
-        <section className="panel activity-panel">
-          <div className="panel-head">
-            <div>
-              <h2>Delivery activity</h2>
-              <p>Planned routes and current progress</p>
-            </div>
-            <span className="quiet-label">Illustrative overview</span>
-          </div>
-          <CityMap compact selectedRoute={1} />
-        </section>
-        <section className="panel active-routes">
-          <div className="panel-head">
-            <div>
-              <h2>Active routes</h2>
-              <p>Progress across today’s fleet</p>
-            </div>
-            <button className="text-link" onClick={() => goTo("tracking")}>
-              View tracking
-            </button>
-          </div>
-          <div className="route-summary-list">
-            {routes.map((route) => (
-              <div className="route-summary" key={route.id}>
-                <div className={`route-dot tone-${route.tone}`} />
-                <div className="route-summary-main">
-                  <strong>{route.driver}</strong>
-                  <span>
-                    {route.label} · {route.stops} stops
-                  </span>
-                  <div className="progress">
-                    <i
-                      style={{
-                        width: `${Math.max(8, (route.completed / route.stops) * 100)}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-                <div className="route-progress">
-                  <b>
-                    {route.completed}/{route.stops}
-                  </b>
-                  <span>completed</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-      </div>
-      <div className="overview-lower">
-        <section className="panel">
-          <div className="panel-head">
-            <div>
-              <h2>Upcoming deliveries</h2>
-              <p>Next scheduled stops across active routes</p>
-            </div>
-            <button className="text-link" onClick={() => goTo("orders")}>
-              All orders
-            </button>
-          </div>
-          <div className="upcoming-list">
-            {initialOrders.slice(1, 5).map((order, i) => (
-              <div className="upcoming" key={order.id}>
-                <span className="time-box">
-                  {["09:45", "10:10", "10:30", "10:45"][i]}
-                  <small>AM</small>
-                </span>
-                <div>
-                  <strong>{order.customer}</strong>
-                  <span>{order.address}</span>
-                </div>
-                <div className="upcoming-driver">
-                  <span>{order.driver}</span>
-                  <Status value={order.status} />
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-        <section className="panel exception-panel">
-          <div className="panel-head">
-            <div>
-              <h2>Needs attention</h2>
-              <p>Orders excluded from current assignments</p>
-            </div>
-            <span className="count-label">2 orders</span>
-          </div>
-          <div className="exception-item">
-            <Icon name="clock" />
-            <div>
-              <strong>RM-1081 · Delivery window conflict</strong>
-              <p>
-                Available driver schedules do not meet the requested window.
-              </p>
-            </div>
-          </div>
-          <div className="exception-item">
-            <Icon name="warning" />
-            <div>
-              <strong>RM-1084 · Vehicle capacity unavailable</strong>
-              <p>Order load exceeds currently available vehicle capacity.</p>
-            </div>
-          </div>
-          <Button onClick={() => goTo("orders")} variant="quiet">
-            Review unassigned orders <Icon name="chevron" size={15} />
-          </Button>
-        </section>
-      </div>
+      <PageHeader title="Overview" subtitle="Orders and the latest route plan for your selected date."
+        actions={<ReportDatePicker date={date} setDate={setDate} />} />
+      {(loading || ordersLoading) && <p role="status">Loading overview…</p>}
+      {error && <div><p role="alert">{error}</p><Button onClick={retry}>Retry plan</Button></div>}
+      {ordersError && <p role="alert">{ordersError}</p>}
+      {!loading && !ordersLoading && (
+        <div className="analytic-metrics">
+          <div><span>Orders</span><strong>{ordersError ? "—" : datedOrders.length}</strong></div>
+          <div><span>Completed</span><strong>{ordersError ? "—" : completed}</strong></div>
+          <div><span>Planned routes</span><strong>{plan?.routes.length ?? (error ? "—" : 0)}</strong></div>
+          <div><span>Unassigned in latest plan</span><strong>{plan?.unassigned.length ?? "—"}</strong></div>
+        </div>
+      )}
+      <section className="panel">
+        <div className="panel-head">
+          <div><h2>Delivery plan</h2><p>{plan ? `Saved plan #${plan.id}` : "Create a plan when orders and vehicles are ready."}</p></div>
+          <Button onClick={() => goTo("planner")}>Open Route Planner</Button>
+        </div>
+        {plan?.routes.length ? (
+          <DataTable headers={["Vehicle", "Driver", "Completed", "Stops"]} rows={plan.routes.map((route) => [
+            route.vehicleId, route.driverName, route.stops.filter((stop) => stop.completedAt).length, route.stops.length,
+          ])} />
+        ) : <p className="report-empty">No routes assigned for this date.</p>}
+      </section>
     </div>
   )
 }
@@ -738,12 +412,41 @@ function RoadAttribution() {
   )
 }
 
+function StopMap({ stops }: { stops: RoutePlan["routes"][number]["stops"] }) {
+  const points = stops.filter((stop) => stop.coordinates)
+  const [open, setOpen] = useState(false)
+  const [selected, setSelected] = useState("")
+  const stop = points.find((item) => item.orderId === selected) ?? points[0]
+  if (!stop?.coordinates) return null
+  const [lon, lat] = stop.coordinates
+  const bounds = [
+    Math.max(-180, lon - .01), Math.max(-85, lat - .008),
+    Math.min(180, lon + .01), Math.min(85, lat + .008),
+  ]
+  const map = new URL("https://www.openstreetmap.org/export/embed.html")
+  map.search = new URLSearchParams({ bbox: bounds.join(","), layer: "mapnik", marker: `${lat},${lon}` }).toString()
+  return (
+    <div className="stop-map">
+      <Button onClick={() => setOpen(!open)}>{open ? "Hide stop map" : "Show stop map"}</Button>
+      {open && (
+        <>
+          <select className="select" aria-label="Stop on map" value={stop.orderId} onChange={(event) => setSelected(event.target.value)}>
+            {points.map((item) => <option value={item.orderId} key={item.orderId}>{item.orderId} · {item.address}</option>)}
+          </select>
+          <iframe title={`Map for ${stop.orderId}`} src={map.href} loading="lazy" referrerPolicy="no-referrer" />
+        </>
+      )}
+    </div>
+  )
+}
+
 function PlannerPage({ date, setDate }: {
   date: string
   setDate: (date: string) => void
 }) {
   const [plan, setPlan] = useState<RoutePlan | null>(null)
-  const [travelMode, setTravelMode] = useState<TravelMode>("demo")
+  const [strategy, setStrategy] = useState<PlannerStrategy>("greedy")
+  const [travelMode, setTravelMode] = useState<Exclude<TravelMode, "demo">>("coordinates")
   const [selected, setSelected] = useState("")
   const [loading, setLoading] = useState(Boolean(date))
   const [optimizing, setOptimizing] = useState(false)
@@ -757,7 +460,8 @@ function PlannerPage({ date, setDate }: {
       .then((saved) => {
         if (controller.signal.aborted) return
         setPlan(saved)
-        if (saved) setTravelMode(saved.travelMode ?? "demo")
+        if (saved) setStrategy(saved.method.startsWith("GNN") ? "graph" : "greedy")
+        if (saved?.travelMode === "road" || saved?.travelMode === "coordinates") setTravelMode(saved.travelMode)
       })
       .catch(() => {
         if (!controller.signal.aborted) setError("Could not load the saved plan. Check that the RouteMind API is running.")
@@ -780,7 +484,7 @@ function PlannerPage({ date, setDate }: {
     setOptimizing(true)
     setError("")
     try {
-      setPlan(await generatePlan(date, travelMode))
+      setPlan(await generatePlan(date, strategy, travelMode))
       setSelected("")
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "Could not generate a route plan.")
@@ -806,15 +510,22 @@ function PlannerPage({ date, setDate }: {
                 value={date}
               />
             </label>
+            <select aria-label="Travel estimates" className="select"
+              disabled={loading || optimizing || Boolean(plan?.event)}
+              onChange={(event) => setTravelMode(event.target.value === "road" ? "road" : "coordinates")}
+              value={travelMode}>
+              <option value="coordinates">Coordinate estimates</option>
+              <option value="road">Road routing</option>
+            </select>
             <select
-              aria-label="Travel data"
+              aria-label="Planning method"
               className="select"
               disabled={loading || optimizing || Boolean(plan?.event)}
-              onChange={(event) => setTravelMode(event.target.value === "road" ? "road" : "demo")}
-              value={travelMode}
+              onChange={(event) => setStrategy(event.target.value === "graph" ? "graph" : "greedy")}
+              value={strategy}
             >
-              <option value="demo">Demo grid</option>
-              <option value="road">Road routing</option>
+              <option value="greedy">Greedy insertion</option>
+              <option value="graph">GNN-assisted insertion</option>
             </select>
             <Button disabled={!date || loading || optimizing || Boolean(plan?.event)} onClick={optimize} variant="primary">
               <Icon name="spark" size={16} />
@@ -824,16 +535,16 @@ function PlannerPage({ date, setDate }: {
         }
       />
       <div className="planner-note">
-        <span><Icon name="info" size={15} /> {travelMode === "road" ? "Road routing sends delivery addresses to openrouteservice." : "Demo travel estimates for sample addresses"}</span>
+        <span><Icon name="info" size={15} /> {travelMode === "road"
+          ? "Road routing sends delivery addresses to openrouteservice."
+          : "Coordinate planning estimates straight-line travel at 30 km/h."}</span>
         {plan && <strong>Saved plan #{plan.id} · {plan.travelSource}</strong>}
       </div>
       {plan?.travelMode === "road" && <RoadAttribution />}
       {plan?.event && <p>This plan is in progress. Use Live Tracking to update the remaining stops.</p>}
       {error && <p role="alert">{error}</p>}
       {loading && <p role="status">Loading saved plan…</p>}
-      {optimizing && <p role="status">{travelMode === "road"
-        ? "Loading road travel times and checking route constraints…"
-        : "Checking capacity, delivery windows, and driver shifts…"}</p>}
+      {optimizing && <p role="status">Calculating travel times and checking route constraints…</p>}
       {!plan && !loading && !optimizing && !error && (
         <p>{date ? "Select Optimize Routes to create the first plan for this date." : "Choose a planning date."}</p>
       )}
@@ -886,9 +597,11 @@ function PlannerPage({ date, setDate }: {
                     index + 1, stop.orderId, stop.address, stop.eta, stop.window, stop.completedAt ?? "—", `${stop.loadKg} kg`,
                   ])}
                 />
+                <StopMap key={route.vehicleId} stops={route.stops} />
               </section>
             )}
           </div>
+          {plan.comparison && <PlanComparison comparison={plan.comparison} />}
           {plan.unassigned.length > 0 && (
             <section className="panel">
               <div className="panel-head">
@@ -903,6 +616,19 @@ function PlannerPage({ date, setDate }: {
         </>
       )}
     </div>
+  )
+}
+
+function PlanComparison({ comparison }: { comparison: NonNullable<RoutePlan["comparison"]> }) {
+  return (
+    <section className="panel stop-panel">
+      <div className="panel-head"><div><h2>Planner comparison</h2><p>Both methods used the same orders, fleet and travel times.</p></div></div>
+      <DataTable headers={["Method", "Assigned orders", "Estimated distance"]} rows={comparison.map((result) => [
+        result.method,
+        result.assigned,
+        result.assigned ? `${result.distanceKm} km` : "—",
+      ])} />
+    </section>
   )
 }
 
@@ -940,6 +666,21 @@ function DataTable({
 }
 
 function OrderDrawer({ order, onClose }: { order: Order, onClose: () => void }) {
+  const [link, setLink] = useState("")
+  const [linkError, setLinkError] = useState("")
+  const [creating, setCreating] = useState(false)
+  const share = async () => {
+    setCreating(true)
+    setLinkError("")
+    try {
+      const { token } = await createTrackingLink(order.id)
+      setLink(`${location.origin}${location.pathname}#/customer/${token}`)
+    } catch (error) {
+      setLinkError(error instanceof Error ? error.message : "Could not create the tracking link.")
+    } finally {
+      setCreating(false)
+    }
+  }
   return (
     <Drawer onClose={onClose} subtitle={order.customer} title={order.id}>
       <div className="drawer-status">
@@ -960,6 +701,11 @@ function OrderDrawer({ order, onClose }: { order: Order, onClose: () => void }) 
         <Detail label="Priority" value={order.priority} />
         <Detail label="Assigned driver" value={order.driver} />
         <Detail label="Delivery date" value={order.date} />
+      </DetailSection>
+      <DetailSection title="Customer tracking">
+        <Button onClick={share} disabled={creating}>{creating ? "Creating…" : "Get tracking link"}</Button>
+        {link && <a href={link} target="_blank" rel="noreferrer">Open or copy customer tracking link</a>}
+        {linkError && <p role="alert">{linkError}</p>}
       </DetailSection>
     </Drawer>
   )
@@ -1009,6 +755,7 @@ function NewOrderModal({
       await onSave({
         customer: String(fields.get("customer")),
         address: String(fields.get("address")),
+        coordinates: String(fields.get("coordinates") ?? "").trim() || null,
         date: String(fields.get("date")),
         priority: fields.get("priority") as OrderDraft["priority"],
         windowStart: String(fields.get("windowStart")),
@@ -1051,6 +798,10 @@ function NewOrderModal({
               placeholder="Street, area, city"
               required
             />
+          </label>
+          <label className="span-2">
+            <span>Longitude, latitude (for coordinate planning)</span>
+            <input name="coordinates" />
           </label>
           <label>
             <span>Delivery date</span>
@@ -1981,198 +1732,63 @@ function HistoryPage({ date, setDate }: ReportDate) {
   )
 }
 
-type Settings = {
-  business: string
-  address: string
-  method: string
-  service: string
-  capacityBuffer: string
-  windows: boolean
-  email: boolean
-  exceptions: boolean
-  compact: boolean
-}
-function SettingsPage({
-  settings,
-  setSettings,
-}: {
-  settings: Settings
-  setSettings: React.Dispatch<React.SetStateAction<Settings>>
-}) {
-  const [saved, setSaved] = useState(false)
-  const update = (key: keyof Settings, value: string | boolean) =>
-    setSettings((s) => ({ ...s, [key]: value }))
-  return (
-    <div className="page settings-page">
-      <PageHeader
-        title="Settings"
-        subtitle="Configure operational preferences for RouteMind."
-      />
-      {saved && (
-        <div className="success-banner">
-          <Icon name="check" />
-          Settings saved for this prototype session.
-        </div>
-      )}
-      <div className="settings-layout">
-        <nav className="settings-nav">
-          <button className="active">Business profile</button>
-          <button>Planning defaults</button>
-          <button>Capacity preferences</button>
-          <button>Notifications</button>
-          <button>Account</button>
-        </nav>
-        <div className="settings-content">
-          <section className="panel setting-section">
-            <div>
-              <h2>Business profile</h2>
-              <p>Information used across delivery planning documents.</p>
-            </div>
-            <div className="setting-fields">
-              <label>
-                <span>Business name</span>
-                <input
-                  onChange={(e) => update("business", e.target.value)}
-                  value={settings.business}
-                />
-              </label>
-              <label>
-                <span>Operations manager</span>
-                <input disabled value="Alex Morgan" />
-              </label>
-              <label className="span-2">
-                <span>Dispatch address</span>
-                <input
-                  onChange={(e) => update("address", e.target.value)}
-                  value={settings.address}
-                />
-              </label>
-            </div>
-          </section>
-          <section className="panel setting-section">
-            <div>
-              <h2>Delivery planning defaults</h2>
-              <p>Defaults used when constructing a new daily plan.</p>
-            </div>
-            <div className="setting-fields">
-              <label>
-                <span>Planner method</span>
-                <select
-                  onChange={(e) => update("method", e.target.value)}
-                  value={settings.method}
-                >
-                  <option>Greedy + 2-opt</option>
-                  <option>Greedy only</option>
-                </select>
-              </label>
-              <label>
-                <span>Standard service time</span>
-                <select
-                  onChange={(e) => update("service", e.target.value)}
-                  value={settings.service}
-                >
-                  <option>10 minutes</option>
-                  <option>15 minutes</option>
-                  <option>20 minutes</option>
-                </select>
-              </label>
-              <label>
-                <span>Vehicle capacity buffer</span>
-                <select
-                  onChange={(e) => update("capacityBuffer", e.target.value)}
-                  value={settings.capacityBuffer}
-                >
-                  <option>10%</option>
-                  <option>5%</option>
-                  <option>No buffer</option>
-                </select>
-              </label>
-              <Toggle
-                checked={settings.windows}
-                label="Enforce delivery time windows"
-                note="Keep orders unassigned when no feasible window exists."
-                onChange={(v) => update("windows", v)}
-              />
-            </div>
-          </section>
-          <section className="panel setting-section">
-            <div>
-              <h2>Notification preferences</h2>
-              <p>Choose which operational events should be surfaced.</p>
-            </div>
-            <div className="toggle-list">
-              <Toggle
-                checked={settings.email}
-                label="Daily plan summary"
-                note="Receive a summary after a plan is saved."
-                onChange={(v) => update("email", v)}
-              />
-              <Toggle
-                checked={settings.exceptions}
-                label="Constraint exceptions"
-                note="Notify when orders cannot be assigned feasibly."
-                onChange={(v) => update("exceptions", v)}
-              />
-              <Toggle
-                checked={settings.compact}
-                label="Compact table density"
-                note="Use denser rows in order and fleet tables."
-                onChange={(v) => update("compact", v)}
-              />
-            </div>
-          </section>
-          <div className="settings-save">
-            <Button
-              onClick={() => {
-                setSaved(true)
-                window.setTimeout(() => setSaved(false), 2200)
-              }}
-              variant="primary"
-            >
-              Save changes
-            </Button>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function Toggle({
-  checked,
-  onChange,
-  label,
-  note,
-}: {
-  checked: boolean
-  onChange: (checked: boolean) => void
-  label: string
-  note: string
-}) {
-  return (
-    <label className="toggle-row">
-      <span>
-        <strong>{label}</strong>
-        <small>{note}</small>
-      </span>
-      <input
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-        type="checkbox"
-      />
-      <i />
-    </label>
-  )
-}
-
 function pageFromHash(): Page {
   const hash = window.location.hash.replace("#/", "") as Page
   return pageTitles[hash] ? hash : "overview"
 }
 
+function CustomerTrackingPage({ token }: { token: string }) {
+  const [status, setStatus] = useState<CustomerTrackingStatus | null>(null)
+  const [error, setError] = useState("")
+  const [request, setRequest] = useState(0)
+  useEffect(() => {
+    const controller = new AbortController()
+    getCustomerTracking(token, controller.signal)
+      .then((result) => { if (!controller.signal.aborted) setStatus(result) })
+      .catch((failure) => {
+        if (!controller.signal.aborted) setError(failure instanceof Error ? failure.message : "Could not load delivery status.")
+      })
+    return () => controller.abort()
+  }, [token, request])
+
+  return (
+    <main className="panel customer-status">
+      <PageHeader title="Delivery status" subtitle={status ? `Order ${status.orderId}` : "RouteMind"} />
+      {!status && !error && <p role="status">Loading delivery status…</p>}
+      {error && <p role="alert">{error}</p>}
+      {status && (
+        <DetailSection title={status.status}>
+          <Detail label="Delivery date" value={status.date} />
+          <Detail label="Delivery window" value={status.window} />
+          {status.eta && <Detail label="Estimated arrival" value={status.eta} />}
+          {status.completedAt && <Detail label="Delivered at" value={status.completedAt} />}
+        </DetailSection>
+      )}
+      <Button onClick={() => {
+        setError("")
+        setRequest((count) => count + 1)
+      }}>Refresh status</Button>
+    </main>
+  )
+}
+
 export default function App() {
+  const [hash, setHash] = useState(() => location.hash)
+  useEffect(() => {
+    const update = () => setHash(location.hash)
+    window.addEventListener("hashchange", update)
+    return () => window.removeEventListener("hashchange", update)
+  }, [])
+  if (hash.startsWith("#/customer/")) {
+    const token = hash.slice("#/customer/".length)
+    return <CustomerTrackingPage key={token} token={token} />
+  }
+  return <DispatcherApp />
+}
+
+function DispatcherApp() {
   const [page, setPage] = useState<Page>(pageFromHash)
-  const [date, setDate] = useState("2026-10-29")
+  const [date, setDate] = useState(() => new Date().toLocaleDateString("sv-SE"))
   const [globalSearch, setGlobalSearch] = useState("")
   const [orders, setOrders] = useState<Order[]>([])
   const [ordersLoading, setOrdersLoading] = useState(true)
@@ -2183,17 +1799,6 @@ export default function App() {
   const [fleetLoading, setFleetLoading] = useState(true)
   const [fleetError, setFleetError] = useState("")
   const [fleetRequest, setFleetRequest] = useState(0)
-  const [settings, setSettings] = useState<Settings>({
-    business: "RouteMind Demo Logistics",
-    address: "12 Commerce Avenue, Chandigarh",
-    method: "Greedy + 2-opt",
-    service: "10 minutes",
-    capacityBuffer: "10%",
-    windows: true,
-    email: true,
-    exceptions: true,
-    compact: false,
-  })
   useEffect(() => {
     const controller = new AbortController()
     listOrders(controller.signal)
@@ -2252,15 +1857,6 @@ export default function App() {
             ))}
           </div>
         ))}
-        <div className="sidebar-spacer" />
-        <div className="account">
-          <span className="avatar">AM</span>
-          <div>
-            <strong>Alex Morgan</strong>
-            <small>Operations Manager</small>
-          </div>
-          <Icon name="menu" size={16} />
-        </div>
       </aside>
       <main className="main">
         <header className="topbar">
@@ -2278,23 +1874,11 @@ export default function App() {
                 value={globalSearch}
               />
             </form>
-            <button aria-label="Notifications" className="top-icon">
-              <Icon name="bell" />
-              <i />
-            </button>
-            <div className="top-account">
-              <span className="avatar">AM</span>
-              <div>
-                <strong>Alex Morgan</strong>
-                <small>Operations</small>
-              </div>
-              <Icon name="chevron" size={14} />
-            </div>
           </div>
         </header>
         <div className="main-content">
           {page === "overview" && (
-            <OverviewPage date={date} goTo={goTo} setDate={setDate} />
+            <OverviewPage date={date} goTo={goTo} orders={orders} ordersLoading={ordersLoading} ordersError={ordersError} setDate={setDate} />
           )}
           {page === "planner" && <PlannerPage date={date} setDate={setDate} />}
           {page === "orders" && (
@@ -2339,9 +1923,6 @@ export default function App() {
             />}
           {page === "analytics" && <AnalyticsPage date={date} setDate={setDate} />}
           {page === "history" && <HistoryPage date={date} setDate={setDate} />}
-          {page === "settings" && (
-            <SettingsPage setSettings={setSettings} settings={settings} />
-          )}
         </div>
       </main>
     </div>

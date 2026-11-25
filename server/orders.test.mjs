@@ -42,6 +42,8 @@ test("orders API keeps entered values across restarts and rejects reversed deliv
 
         if (phase === "create") {
           const initialCount = (await get()).length
+          assert.equal(initialCount, 0)
+          assert.deepEqual(database.fleet.list(), { drivers: [], vehicles: [] })
           const invalid = await post({ ...input, windowEnd: "09:00" })
           assert.equal(invalid.status, 400)
           assert.match((await invalid.json()).error, /window/)

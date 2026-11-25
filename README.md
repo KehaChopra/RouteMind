@@ -10,8 +10,9 @@ RouteMind is a logistics operations dashboard prototype for planning daily deliv
 - **Fleet:** Review vehicle and driver information and add fleet entries.
 - **Live Tracking:** Mark the next stop delivered and record delays against the saved plan.
 - **Analytics and history:** Review saved plan versions, compare changes after delays, and see delivery outcomes and reported delay totals.
+- **Customer status:** Create an order-specific link that shows scheduling status, ETA, and completion time.
 
-Orders, fleet records, generated plans, and delivery events are stored through an Express API in SQLite. The database starts with demo orders and fleet records. The overview still shows a sample map and sample metrics.
+Orders, fleet records, generated plans, and delivery events are stored through an Express API in SQLite. A new database starts empty. The Overview shows totals from saved records and plans.
 
 ## Getting started
 
@@ -44,13 +45,14 @@ pnpm preview
 
 Keep the API running while using the preview. Run `pnpm test` to check API validation, assignments, routing constraints, and persistence across restarts.
 
-## Try route planning
+## Create your first route plan
 
-1. Open **Route Planner**, select **29 October 2026**, and click **Optimize Routes**. The planner considers pending orders and pairs marked **Available**. It skips delivered and in-transit orders.
-2. Select a vehicle to see the stop order, ETA, load, and estimated depot return. Refresh the page to reload the latest plan for that date.
-3. To test capacity, add an order on that date for **7 Ashok Lane, West End**, with a 10:30–11:00 window and a load of **141 kg**. In the seeded fleet the only available vehicle paired with an available driver can carry 140 kg. Re-run the planner and check the order's reason in **Unassigned orders**.
+1. Set `ROUTEMIND_DEPOT_COORDINATES` to the depot’s longitude and latitude, separated by a comma, before starting the API. In PowerShell, run `$env:ROUTEMIND_DEPOT_COORDINATES = Read-Host "Depot longitude, latitude"` and enter the coordinates when prompted.
+2. Add a driver in **Drivers & Vehicles**, then add a vehicle and select that driver. Add orders for the same date.
+3. Open **Route Planner** and choose a travel mode. **Coordinate estimates** uses the coordinates you entered on each order and estimates straight-line travel at 30 km/h. It works without a provider account or internet access. **Road routing** requires the configuration below.
+4. Click **Optimize Routes**. Select a vehicle to see stops, estimated arrival times, and load. Use **Show stop map** to see an individual stop on OpenStreetMap when internet access is available.
 
-The greedy insertion planner prioritizes high-priority orders, then earlier deadlines. It checks total vehicle load, time windows for starting delivery service, service durations, and the driver's return to the depot before the shift ends. Travel comes from a fixed demo grid covering the sample addresses. An address outside that grid is reported with a reason. Each run saves a plan snapshot without changing order execution status.
+The planner checks total vehicle load, time windows for starting delivery service, service durations, and return to the depot before the shift ends. Oversized orders and other scheduling exceptions appear under **Unassigned orders** with an explanation.
 
 ## Use road travel estimates
 
@@ -58,15 +60,25 @@ The greedy insertion planner prioritizes high-priority orders, then earlier dead
 2. Set `ROUTEMIND_DEPOT_COORDINATES` to the depot’s longitude and latitude, separated by a comma. Restart the API with both variables set.
 3. Add orders with full addresses, including the street, city, and postal code where available. Select **Road routing** in **Route Planner**, then click **Optimize Routes**. Test with public locations for the course demo. Road mode sends order addresses and coordinates to the routing provider.
 
-Road mode estimates driving distance and duration for up to 20 distinct addresses per plan. It uses the driving-car profile for all vehicles. The planner explains an unresolved address or a location with no route to and from the depot. A saved road plan keeps its original travel estimates for subsequent delivery updates. Choose **Demo grid** for the offline classroom scenario. © openrouteservice.org by HeiGIT · Map data © OpenStreetMap contributors.
+Road mode estimates driving distance and duration for up to 20 distinct addresses per plan using the driving-car profile. The planner explains unresolved addresses or missing routes. The initial travel matrix is saved for delivery updates. © openrouteservice.org by HeiGIT · Map data © OpenStreetMap contributors.
 
 ## Try replanning after a delay
 
-1. Generate a plan for **29 October 2026**, then open **Live Tracking** for the same date.
+1. Generate a plan, then open **Live Tracking** for the same date.
 2. Enter the next stop’s completion time and click **Mark next stop delivered**. The order becomes **Delivered** on the Orders screen.
 3. Report a delay and compare the remaining ETAs and the unassigned list. Each update saves a new plan version that preserves completed stops and their recorded times.
 
-The demo uses the depot or the last completed stop as the driver’s location. It adds delays to the driver’s last recorded time, or the shift start if the driver has yet to complete a stop. Replanning keeps pending deliveries on the original vehicle and preserves their relative order. Stops that can no longer fit go to the unassigned list for review.
+Replanning uses the depot or the last completed stop as the driver’s location. It adds delays to the last recorded time or the shift start. Pending deliveries stay on their original vehicle in the same relative order. Stops that can no longer fit go to the unassigned list.
+
+## Customer status
+
+Open an order and click **Get tracking link**. The order-specific link shows the scheduled window, latest estimated arrival, and actual completion time once delivered. It omits names, addresses, and fleet details. Use it on the same local server for the evaluation. Deployment for external customers needs a reachable host and operator authentication.
+
+## Compare planning methods
+
+**Greedy insertion** prioritizes orders and tries the least-distance feasible insertion. **GNN-assisted insertion** uses a small learned graph layer to rank orders within each priority according to likely scheduling conflicts. Both methods use the same constraint checks. The comparison table uses identical inputs and travel times. Distance is for assigned deliveries, so compare the assigned counts alongside distance.
+
+Run `npm run evaluate:planner` for the reproducible benchmark of 40 held-out synthetic scenarios. The model learns on a separate set of synthetic scenarios. MIDEA integration remains pending until the intended package and interface are identified.
 
 ## Review history and analytics
 
@@ -88,7 +100,7 @@ pnpm format
 ├── public/             # Static assets
 ├── src/
 │   ├── App.tsx         # Dashboard pages and interactions
-│   ├── data.ts         # Sample routes, orders, and fleet data
+│   ├── data.ts         # Order and fleet types
 │   ├── index.css       # Tailwind import and application styles
 │   └── main.tsx        # React entry point
 ├── index.html

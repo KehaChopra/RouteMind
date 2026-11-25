@@ -8,12 +8,14 @@ import { test } from "node:test"
 import { createApp } from "./app.mjs"
 import { openDatabase } from "./database.mjs"
 import { comparePlans } from "../src/reporting.ts"
+import { addTestVehicle } from "./test-fixtures.mjs"
 
 test("delivery updates persist and a delay changes pending ETAs while preserving completed stops", async () => {
   const date = "2026-11-01"
   const directory = mkdtempSync(join(tmpdir(), "route-mind-delivery-test-"))
   const filename = join(directory, "orders.sqlite")
   const db = openDatabase(filename)
+  addTestVehicle(db)
   const server = createApp(db).listen(0, "127.0.0.1")
   let revised
   try {
@@ -32,11 +34,16 @@ test("delivery updates persist and a delay changes pending ETAs while preserving
       const first = db.orders.create({ ...order, windowStart: "09:00", windowEnd: "09:20" })
       const second = db.orders.create({ ...order, windowStart: "09:25", windowEnd: "10:20" })
       const third = db.orders.create({ ...order, windowStart: "09:40", windowEnd: "09:45" })
-      const generated = await post("/plans", { date })
+      const generated = await post("/plans", { date, travelMode: "demo" })
       assert.equal(generated.status, 201)
       const original = await generated.json()
       const [route] = original.routes
       assert.deepEqual(route.stops.map((stop) => stop.orderId), [first.id, second.id, third.id])
+      const share = await post(`/orders/${second.id}/tracking-link`, {})
+      assert.equal(share.status, 200)
+      const { token } = await share.json()
+      assert.match(token, /^[A-Za-z0-9_-]{32}$/)
+      assert.equal((await fetch(`${base}/customer-tracking/invalid`)).status, 404)
 
       const update = (planId, event) => post("/delivery-events", { date, planId, vehicleId: route.vehicleId, ...event })
       const outOfOrder = await update(original.id, { type: "delivered", orderId: second.id, at: "09:22" })
@@ -60,7 +67,13 @@ test("delivery updates persist and a delay changes pending ETAs while preserving
       assert.equal(revised.routes[0].durationMinutes, 69)
       assert.equal(revised.unassigned[0].orderId, third.id)
       assert.match(revised.unassigned[0].reason, /updated route/)
-      assert.equal((await post("/plans", { date })).status, 409)
+      const customer = await fetch(`${base}/customer-tracking/${token}`)
+      assert.equal(customer.status, 200)
+      assert.deepEqual(await customer.json(), {
+        orderId: second.id, date, window: "09:25–10:20",
+        status: "Scheduled", eta: "09:47", completedAt: null,
+      })
+      assert.equal((await post("/plans", { date, travelMode: "demo" })).status, 409)
 
       const history = await fetch(`${base}/plans?date=${date}`)
       assert.equal(history.status, 200)

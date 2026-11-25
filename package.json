@@ -8,6 +8,7 @@
     "dev:api": "node --watch server/index.mjs",
     "start:api": "node server/index.mjs",
     "test": "node --test server/*.test.mjs",
+    "evaluate:planner": "node server/evaluate-planner.mjs",
     "build": "vite build",
     "preview": "vite preview",
     "format": "oxfmt"

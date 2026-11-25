@@ -1,11 +1,11 @@
-import { initialOrders } from "../src/data.ts"
-import { isDate, isTime } from "./validation.mjs"
+import { isDate, isTime, parseCoordinates } from "./validation.mjs"
 
 export function validateOrder(input) {
   if (!input || typeof input !== "object") return "Order details are required."
   const { customer, address, date, priority, windowStart, windowEnd, parcelCount, loadValue, serviceMinutes } = input
   if (typeof customer !== "string" || !customer.trim() || customer.length > 120) return "Enter a customer name of up to 120 characters."
   if (typeof address !== "string" || !address.trim() || address.length > 300) return "Enter a delivery address of up to 300 characters."
+  if (input.coordinates != null && !parseCoordinates(input.coordinates)) return "Enter coordinates as longitude, latitude."
   if (!isDate(date)) return "Enter a valid delivery date."
   if (!["Standard", "High", "Low"].includes(priority)) return "Select a valid priority."
   if (!isTime(windowStart) || !isTime(windowEnd) || windowStart >= windowEnd) return "The delivery window must end after it starts."
@@ -28,8 +28,8 @@ function toOrder(row) {
 
 const insertSql = `INSERT INTO orders (
   id, customer, address, date, priority, windowStart, windowEnd, parcelCount,
-  loadValue, serviceMinutes, driver, status
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`
+  loadValue, serviceMinutes, driver, status, coordinates
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`
 
 export function createOrdersTable(db) {
   db.exec(`
@@ -48,14 +48,6 @@ export function createOrdersTable(db) {
       status TEXT NOT NULL
     ) STRICT
   `)
-  const insert = db.prepare(insertSql)
-  for (const order of initialOrders) {
-    insert.get(
-      Number(order.id.slice(3)), order.customer, order.address, order.date,
-      order.priority, order.windowStart, order.windowEnd, order.parcelCount,
-      order.loadValue, order.serviceMinutes, order.driver, order.status,
-    )
-  }
 }
 
 export function prepareOrders(db) {
@@ -66,7 +58,7 @@ export function prepareOrders(db) {
     create: (input) => toOrder(insert.get(
       null, input.customer.trim(), input.address.trim(), input.date, input.priority,
       input.windowStart, input.windowEnd, input.parcelCount, input.loadValue,
-      input.serviceMinutes, "Unassigned", "Unassigned",
+      input.serviceMinutes, "Unassigned", "Unassigned", input.coordinates ?? null,
     )),
   }
 }

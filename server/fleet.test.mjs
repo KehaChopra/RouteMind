@@ -19,7 +19,12 @@ test("fleet API upgrades the orders database and persists driver and vehicle ass
     try {
       createOrdersTable(previous)
       previous.exec("PRAGMA user_version = 1")
-      previous.exec("UPDATE orders SET customer = 'Existing customer' WHERE id = 1042")
+      previous.exec(`
+        INSERT INTO orders (customer, address, date, priority, windowStart, windowEnd, parcelCount,
+          loadValue, serviceMinutes, driver, status)
+        VALUES ('Existing customer', 'Test address', '2026-11-01', 'Standard', '09:00', '10:00',
+          1, 5, 10, 'Unassigned', 'Unassigned')
+      `)
     } finally {
       previous.close()
     }
@@ -66,7 +71,7 @@ test("fleet API upgrades the orders database and persists driver and vehicle ass
       const savedVehicle = fleet.vehicles.find((record) => record.id === "TEST-VAN")
       assert.equal(savedVehicle.capacity, 42.5)
       assert.equal(savedVehicle.driverId, driverId)
-      assert.equal(reopened.orders.list().find((order) => order.id === "RM-1042").customer, "Existing customer")
+      assert.equal(reopened.orders.list()[0].customer, "Existing customer")
     } finally {
       reopened.close()
     }

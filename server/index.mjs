@@ -7,6 +7,7 @@ import { createRoadProvider } from "./road-provider.mjs"
 const filename = resolve(process.env.ROUTEMIND_DB ?? ".route-mind/orders.sqlite")
 mkdirSync(dirname(filename), { recursive: true })
 const database = openDatabase(filename, {
+  depotCoordinates: process.env.ROUTEMIND_DEPOT_COORDINATES,
   roadProvider: createRoadProvider({
     apiKey: process.env.ROUTEMIND_ORS_KEY,
     depot: process.env.ROUTEMIND_DEPOT_COORDINATES,

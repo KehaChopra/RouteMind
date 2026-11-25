@@ -7,6 +7,7 @@ import { test } from "node:test"
 import { createApp } from "./app.mjs"
 import { openDatabase } from "./database.mjs"
 import { buildPlan } from "./planner.mjs"
+import { addTestOrder, addTestVehicle } from "./test-fixtures.mjs"
 
 const date = "2026-10-29"
 
@@ -60,6 +61,8 @@ test("plans API saves a dated snapshot and reads the latest plan after a restart
   const directory = mkdtempSync(join(tmpdir(), "route-mind-plan-test-"))
   const filename = join(directory, "orders.sqlite")
   const db = openDatabase(filename)
+  addTestVehicle(db)
+  addTestOrder(db, date)
   const server = createApp(db).listen(0, "127.0.0.1")
   let saved
   try {
@@ -69,7 +72,7 @@ test("plans API saves a dated snapshot and reads the latest plan after a restart
       const generate = (planningDate) => fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date: planningDate }),
+        body: JSON.stringify({ date: planningDate, travelMode: "demo" }),
       })
       assert.equal((await generate("2026-02-30")).status, 400)
       const first = await generate(date)

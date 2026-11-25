@@ -4,7 +4,7 @@ import { validateDriver, validateVehicle } from "./fleet.mjs"
 import { validateOrder } from "./orders.mjs"
 import { isDate } from "./validation.mjs"
 
-export function createApp({ orders, fleet, plans, delivery }) {
+export function createApp({ orders, fleet, plans, delivery, customerTracking }) {
   const app = express()
   app.use(express.json({ limit: "16kb" }))
 
@@ -16,6 +16,20 @@ export function createApp({ orders, fleet, plans, delivery }) {
     const error = validateOrder(request.body)
     if (error) return response.status(400).json({ error })
     response.status(201).json(orders.create(request.body))
+  })
+
+  app.post("/api/orders/:id/tracking-link", (request, response) => {
+    const id = Number(/^RM-(\d+)$/.exec(request.params.id)?.[1])
+    const result = Number.isSafeInteger(id) && customerTracking.share(id)
+    if (!result) return response.status(404).json({ error: "Order not found." })
+    response.set("Cache-Control", "no-store").json(result)
+  })
+
+  app.get("/api/customer-tracking/:token", (request, response) => {
+    const { token } = request.params
+    const result = /^[A-Za-z0-9_-]{32}$/.test(token) && customerTracking.status(token)
+    if (!result) return response.status(404).json({ error: "This tracking link was not found." })
+    response.set("Cache-Control", "no-store").json(result)
   })
 
   app.get("/api/fleet", (_request, response) => response.json(fleet.list()))
@@ -52,10 +66,13 @@ export function createApp({ orders, fleet, plans, delivery }) {
   })
 
   app.post("/api/plans", async (request, response) => {
-    const { date, travelMode = "demo" } = request.body ?? {}
+    const { date, travelMode = "coordinates", strategy = "greedy" } = request.body ?? {}
     if (!isDate(date)) return response.status(400).json({ error: "Enter a valid planning date." })
-    if (travelMode !== "demo" && travelMode !== "road") return response.status(400).json({ error: "Select a valid travel mode." })
-    const result = await delivery.generate(date, travelMode)
+    if (travelMode !== "demo" && travelMode !== "road" && travelMode !== "coordinates") {
+      return response.status(400).json({ error: "Select a valid travel mode." })
+    }
+    if (strategy !== "greedy" && strategy !== "graph") return response.status(400).json({ error: "Select a valid planning method." })
+    const result = await delivery.generate(date, travelMode, strategy)
     response.status(result.status).json(result.plan ?? { error: result.error })
   })
 

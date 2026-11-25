@@ -1,4 +1,3 @@
-import { initialDrivers, initialVehicles } from "../src/data.ts"
 import { isTime } from "./validation.mjs"
 
 const insertDriver = `INSERT INTO drivers (
@@ -33,21 +32,6 @@ export function createFleetTables(db) {
       operational TEXT NOT NULL
     ) STRICT;
   `)
-  const driverStatement = db.prepare(insertDriver)
-  for (const driver of initialDrivers) {
-    driverStatement.get(
-      Number(driver.id.slice(4)), driver.name, driver.initials, driver.status,
-      driver.route, driver.assigned, driver.completed, driver.shiftStart, driver.shiftEnd,
-      driver.phone, driver.email, driver.eta,
-    )
-  }
-  const vehicleStatement = db.prepare(insertVehicle)
-  for (const vehicle of initialVehicles) {
-    vehicleStatement.get(
-      vehicle.id, vehicle.type, vehicle.capacity, vehicle.load, vehicle.status,
-      vehicle.driverId ? Number(vehicle.driverId.slice(4)) : null, vehicle.operational,
-    )
-  }
 }
 
 export function validateDriver(input) {

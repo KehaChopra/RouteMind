@@ -1,4 +1,5 @@
 import { demoTravel } from "./travel.mjs"
+import { graphScores } from "./graph-model.mjs"
 
 const priorityRank = { High: 0, Standard: 1, Low: 2 }
 const pendingStatuses = new Set(["Scheduled", "Unassigned", "Exception"])
@@ -31,6 +32,7 @@ export function schedule(driver, orders, travel, from = travel.depot, readyAt = 
       window: order.window,
       loadKg: order.loadValue,
       serviceMinutes: order.serviceMinutes,
+      coordinates: travel.coordinates?.(order.location),
     })
     time += order.serviceMinutes
     distanceKm += leg.distanceKm
@@ -71,7 +73,7 @@ export function planningOrders(date, allOrders) {
   return allOrders.filter((order) => order.date === date && pendingStatuses.has(order.status))
 }
 
-export function buildPlan(date, allOrders, { drivers, vehicles }, travel = demoTravel) {
+export function buildPlan(date, allOrders, { drivers, vehicles }, travel = demoTravel, strategy = "greedy") {
   const availableDrivers = new Map(drivers
     .filter((driver) => driver.status === "Available")
     .map((driver) => [driver.id, driver]))
@@ -82,8 +84,14 @@ export function buildPlan(date, allOrders, { drivers, vehicles }, travel = demoT
     }))
   const maxCapacity = routes.reduce((max, route) => Math.max(max, route.vehicle.capacity), 0)
   const orders = planningOrders(date, allOrders)
-    .sort((a, b) => priorityRank[a.priority] - priorityRank[b.priority] ||
-      a.windowEnd.localeCompare(b.windowEnd) || a.id.localeCompare(b.id))
+  const nodes = orders.map((order) => ({
+    id: order.id, location: travel.find(order.address), start: minutes(order.windowStart),
+    end: minutes(order.windowEnd), service: order.serviceMinutes,
+  })).filter((node) => node.location !== undefined)
+  const scores = strategy === "graph" ? graphScores(nodes, travel) : new Map()
+  orders.sort((a, b) => priorityRank[a.priority] - priorityRank[b.priority] ||
+    (scores.get(b.id) ?? 0) - (scores.get(a.id) ?? 0) ||
+    a.windowEnd.localeCompare(b.windowEnd) || a.id.localeCompare(b.id))
 
   const unassigned = []
   for (const order of orders) {
@@ -111,7 +119,7 @@ export function buildPlan(date, allOrders, { drivers, vehicles }, travel = demoT
 
   return {
     date,
-    method,
+    method: strategy === "graph" ? "GNN-assisted greedy insertion" : method,
     travelSource: travel.source,
     orderCount: orders.length,
     routes: routes.filter((route) => route.schedule).map((route) => ({
