@@ -2043,9 +2043,29 @@ td strong {
 
 .analytic-metrics {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
   gap: 11px;
   margin-bottom: 14px;
+}
+
+.report-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.report-empty {
+  margin: 0;
+  padding: 14px;
+}
+
+.report-details {
+  margin-top: 16px;
+}
+
+.report-details h3 {
+  margin-bottom: 6px;
 }
 
 .analytic-metrics > div {

@@ -39,6 +39,18 @@ export function createApp({ orders, fleet, plans, delivery }) {
     response.json(plans.latest(date))
   })
 
+  app.get("/api/plans", (request, response) => {
+    const { date } = request.query
+    if (!isDate(date)) return response.status(400).json({ error: "Enter a valid planning date." })
+    response.json(plans.list(date))
+  })
+
+  app.get("/api/analytics", (request, response) => {
+    const { date } = request.query
+    if (!isDate(date)) return response.status(400).json({ error: "Enter a valid planning date." })
+    response.json(plans.analytics(date))
+  })
+
   app.post("/api/plans", (request, response) => {
     const date = request.body?.date
     if (!isDate(date)) return response.status(400).json({ error: "Enter a valid planning date." })

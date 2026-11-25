@@ -13,6 +13,7 @@ export type VehicleDraft = Pick<Vehicle, "type" | "capacity" | "driverId"> & {
 export type RoutePlan = {
   id: number
   date: string
+  createdAt: string
   method: string
   travelSource: string
   orderCount: number
@@ -45,6 +46,25 @@ export type RoutePlan = {
     }[]
   }[]
   unassigned: { orderId: string, address: string, reason: string }[]
+}
+
+export type PlanAnalytics = {
+  planId: number
+  orderCount: number
+  completed: number
+  pending: number
+  unassigned: number
+  distanceKm: number
+  delayCount: number
+  delayMinutes: number
+  routes: {
+    vehicleId: string
+    driverName: string
+    completed: number
+    pending: number
+    distanceKm: number
+    durationMinutes: number
+  }[]
 }
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -88,6 +108,14 @@ export function createVehicle(vehicle: VehicleDraft) {
 
 export function getLatestPlan(date: string, signal: AbortSignal) {
   return request<RoutePlan | null>(`/api/plans/latest?date=${encodeURIComponent(date)}`, { signal })
+}
+
+export function listPlans(date: string, signal: AbortSignal) {
+  return request<RoutePlan[]>(`/api/plans?date=${encodeURIComponent(date)}`, { signal })
+}
+
+export function getAnalytics(date: string, signal: AbortSignal) {
+  return request<PlanAnalytics | null>(`/api/analytics?date=${encodeURIComponent(date)}`, { signal })
 }
 
 export function generatePlan(date: string) {

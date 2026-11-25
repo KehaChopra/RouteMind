@@ -7,6 +7,7 @@ import { DatabaseSync } from "node:sqlite"
 import { test } from "node:test"
 import { createApp } from "./app.mjs"
 import { openDatabase } from "./database.mjs"
+import { comparePlans } from "../src/reporting.ts"
 
 test("delivery updates persist and a delay changes pending ETAs while preserving completed stops", async () => {
   const date = "2026-11-01"
@@ -60,6 +61,40 @@ test("delivery updates persist and a delay changes pending ETAs while preserving
       assert.equal(revised.unassigned[0].orderId, third.id)
       assert.match(revised.unassigned[0].reason, /updated route/)
       assert.equal((await post("/plans", { date })).status, 409)
+
+      const history = await fetch(`${base}/plans?date=${date}`)
+      assert.equal(history.status, 200)
+      const runs = await history.json()
+      assert.deepEqual(runs, [revised, afterDelivery, original])
+      const changes = comparePlans(runs[1], runs[0])
+      assert.deepEqual(changes.map(([id]) => id), [second.id, third.id])
+      assert.match(changes[0][1], /09:25/)
+      assert.match(changes[0][2], /09:47/)
+      assert.match(changes[1][2], /Unassigned/)
+
+      const analytics = await fetch(`${base}/analytics?date=${date}`)
+      assert.equal(analytics.status, 200)
+      assert.deepEqual(await analytics.json(), {
+        planId: revised.id,
+        orderCount: 3,
+        completed: 1,
+        pending: 1,
+        unassigned: 1,
+        distanceKm: 8,
+        delayCount: 1,
+        delayMinutes: 25,
+        routes: [{
+          vehicleId: route.vehicleId,
+          driverName: route.driverName,
+          completed: 1,
+          pending: 1,
+          distanceKm: 8,
+          durationMinutes: 69,
+        }],
+      })
+      assert.deepEqual(await (await fetch(`${base}/plans?date=2026-11-02`)).json(), [])
+      assert.equal(await (await fetch(`${base}/analytics?date=2026-11-02`)).json(), null)
+      assert.equal((await fetch(`${base}/analytics?date=2026-02-30`)).status, 400)
     } finally {
       await new Promise((resolve) => server.close(resolve))
       db.close()

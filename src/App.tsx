@@ -4,9 +4,11 @@ import {
   createOrder,
   createVehicle,
   generatePlan,
+  getAnalytics,
   getLatestPlan,
   listFleet,
   listOrders,
+  listPlans,
   recordDeliveryEvent,
   type DeliveryUpdate,
   type DriverDraft,
@@ -14,9 +16,9 @@ import {
   type RoutePlan,
   type VehicleDraft,
 } from "./api"
+import { comparePlans } from "./reporting"
 import {
   Driver,
-  historyRuns,
   initialOrders,
   Order,
   Route,
@@ -186,12 +188,14 @@ function Icon({ name, size = 18 }: { name: IconName, size?: number }) {
 }
 
 function Button({
+  ariaLabel,
   children,
   variant = "secondary",
   onClick,
   type = "button",
   disabled = false,
 }: {
+  ariaLabel?: string
   children: React.ReactNode
   variant?: "primary" | "secondary" | "quiet" | "danger"
   onClick?: () => void
@@ -200,6 +204,7 @@ function Button({
 }) {
   return (
     <button
+      aria-label={ariaLabel}
       className={`btn btn-${variant}`}
       disabled={disabled}
       onClick={onClick}
@@ -1744,309 +1749,200 @@ function TrackingPage({ date, setDate, goToPlanner, onDelivered }: {
   )
 }
 
-function AnalyticsPage() {
-  const [range, setRange] = useState("Last 7 days")
-  const multiplier = range === "Last 30 days" ? 4 : 1
+type ReportDate = { date: string, setDate: (date: string) => void }
+
+function ReportDatePicker({ date, setDate }: ReportDate) {
+  return (
+    <label className="date-control">
+      <Icon name="calendar" size={16} />
+      <input aria-label="Planning date" onChange={(event) => setDate(event.target.value)} type="date" value={date} />
+    </label>
+  )
+}
+
+function useDatedReport<T>(date: string, load: (date: string, signal: AbortSignal) => Promise<T>) {
+  const [request, setRequest] = useState(0)
+  const [result, setResult] = useState<{ date: string, data?: T, error?: string } | null>(null)
+
+  useEffect(() => {
+    if (!date) return
+    const controller = new AbortController()
+    load(date, controller.signal)
+      .then((data) => { if (!controller.signal.aborted) setResult({ date, data }) })
+      .catch(() => {
+        if (!controller.signal.aborted) setResult({ date, error: "Could not load the report. Check that the RouteMind API is running." })
+      })
+    return () => controller.abort()
+  }, [date, load, request])
+
+  const current = result?.date === date ? result : null
+  return {
+    data: current?.data,
+    error: current?.error,
+    loading: Boolean(date && !current),
+    retry: () => {
+      setResult(null)
+      setRequest((count) => count + 1)
+    },
+  }
+}
+
+function AnalyticsPage({ date, setDate }: ReportDate) {
+  const { data, loading, error, retry } = useDatedReport(date, getAnalytics)
   return (
     <div className="page">
       <PageHeader
         title="Analytics"
-        subtitle="Review delivery and route performance using illustrative data."
-        actions={
-          <>
-            <select
-              className="select"
-              onChange={(e) => setRange(e.target.value)}
-              value={range}
-            >
-              <option>Last 7 days</option>
-              <option>Last 30 days</option>
-              <option>This quarter</option>
-            </select>
-            <Button>
-              <Icon name="download" size={16} />
-              Export Report
-            </Button>
-          </>
-        }
+        subtitle="Delivery outcomes and reported delays for the latest saved plan."
+        actions={<ReportDatePicker date={date} setDate={setDate} />}
       />
-      <div className="mock-data-note">
-        <Icon name="info" size={16} />
-        All analytics shown are illustrative prototype data and do not represent
-        measured optimization benefits.
-      </div>
-      <div className="analytic-metrics">
-        <div>
-          <span>Delivery completion rate</span>
-          <strong>92.4%</strong>
-          <small>
-            {158 * multiplier} of {172 * multiplier} orders
-          </small>
-        </div>
-        <div>
-          <span>Planned distance</span>
-          <strong>{428 * multiplier} km</strong>
-          <small>Across {27 * multiplier} routes</small>
-        </div>
-        <div>
-          <span>Actual distance</span>
-          <strong>{441 * multiplier} km</strong>
-          <small>Recorded mock totals</small>
-        </div>
-        <div>
-          <span>Route utilization</span>
-          <strong>74%</strong>
-          <small>Average vehicle capacity</small>
-        </div>
-      </div>
-      <div className="chart-grid">
-        <section className="panel chart-card wide">
-          <div className="panel-head">
+      {loading && <p role="status">Loading analytics…</p>}
+      {error && <div><p role="alert">{error}</p><Button onClick={retry}>Retry</Button></div>}
+      {!date && <p>Choose a planning date.</p>}
+      {data === null && <p>No saved plan for this date. Generate a plan to see its delivery outcomes.</p>}
+      {data && (
+        <>
+          <div className="analytic-metrics">
             <div>
-              <h2>Orders completed per day</h2>
-              <p>Completed and delayed deliveries</p>
+              <span>Completed</span>
+              <strong>{data.completed}</strong>
+              <small>Of {data.orderCount} orders in plan #{data.planId}</small>
             </div>
-            <span className="chart-unit">Orders</span>
-          </div>
-          <BarChart />
-        </section>
-        <section className="panel chart-card">
-          <div className="panel-head">
             <div>
-              <h2>On-time performance</h2>
-              <p>Delivery outcome mix</p>
+              <span>Pending</span>
+              <strong>{data.pending}</strong>
+              <small>Still assigned to a vehicle</small>
+            </div>
+            <div>
+              <span>Unassigned</span>
+              <strong>{data.unassigned}</strong>
+              <small>Orders awaiting review</small>
+            </div>
+            <div>
+              <span>Reported delays</span>
+              <strong>{data.delayCount}</strong>
+              <small>{data.delayMinutes} minutes reported</small>
             </div>
           </div>
-          <DonutChart />
-          <div className="legend-list">
-            <span>
-              <i className="legend-sage" />
-              On time <b>86%</b>
-            </span>
-            <span>
-              <i className="legend-gold" />
-              Delayed <b>9%</b>
-            </span>
-            <span>
-              <i className="legend-neutral" />
-              Exception <b>5%</b>
-            </span>
-          </div>
-        </section>
-        <section className="panel chart-card">
-          <div className="panel-head">
-            <div>
-              <h2>Route utilization</h2>
-              <p>Average assigned capacity by route</p>
+          <section className="panel">
+            <div className="panel-head">
+              <div>
+                <h2>Delivery progress by vehicle</h2>
+                <p>{data.distanceKm} km estimated across {data.routes.length} vehicles</p>
+              </div>
             </div>
-          </div>
-          <UtilizationChart />
-        </section>
-      </div>
-      <section className="panel table-panel">
-        <div className="panel-head">
-          <div>
-            <h2>Route performance</h2>
-            <p>Illustrative route and delivery results</p>
-          </div>
-        </div>
-        <DataTable
-          headers={[
-            "Route",
-            "Driver",
-            "Orders",
-            "Completion",
-            "Planned distance",
-            "Actual distance",
-            "On-time",
-            "Status",
-          ]}
-          rows={routes.map((r, i) => [
-            r.label,
-            r.driver,
-            r.stops,
-            `${r.completed}/${r.stops}`,
-            r.distance,
-            `${parseFloat(r.distance) + [0.8, 1.1, 0.4, 1.5][i]} km`,
-            `${[94, 88, 91, 84][i]}%`,
-            <Status value={i === 3 ? "Review needed" : "On track"} />,
-          ])}
-        />
-      </section>
-    </div>
-  )
-}
-
-function BarChart() {
-  const values = [18, 22, 19, 26, 24, 29, 20]
-  return (
-    <div className="bar-chart">
-      <div className="chart-y">
-        <span>30</span>
-        <span>20</span>
-        <span>10</span>
-        <span>0</span>
-      </div>
-      <div className="bars">
-        {values.map((v, i) => (
-          <div key={i}>
-            <div className="bar-stack">
-              <i style={{ height: `${(v / 30) * 100}%` }} />
-              <b
-                style={{ height: `${([2, 1, 3, 2, 1, 3, 2][i] / 30) * 100}%` }}
+            {data.routes.length ? (
+              <DataTable
+                headers={["Vehicle", "Driver", "Completed", "Pending", "Est. distance", "Est. duration"]}
+                rows={data.routes.map((route) => [
+                  route.vehicleId, route.driverName, route.completed, route.pending,
+                  `${route.distanceKm} km`, `${route.durationMinutes} min`,
+                ])}
               />
-            </div>
-            <span>{["Fri", "Sat", "Sun", "Mon", "Tue", "Wed", "Thu"][i]}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-function DonutChart() {
-  return (
-    <div className="donut-wrap">
-      <div className="donut">
-        <div>
-          <strong>92.4%</strong>
-          <span>completed</span>
-        </div>
-      </div>
-    </div>
-  )
-}
-function UtilizationChart() {
-  return (
-    <div className="utilization-chart">
-      {routes.map((r) => (
-        <div key={r.id}>
-          <span>{r.label}</span>
-          <div>
-            <i
-              className={`tone-${r.tone}`}
-              style={{ width: `${r.capacity}%` }}
-            />
-          </div>
-          <b>{r.capacity}%</b>
-        </div>
-      ))}
+            ) : <p className="report-empty">No vehicles have assigned stops.</p>}
+          </section>
+        </>
+      )}
     </div>
   )
 }
 
-function HistoryPage() {
-  const [selected, setSelected] = useState<typeof historyRuns[number] | null>(
-    null,
-  )
+function describeRun(run: RoutePlan) {
+  if (run.event?.type === "delay") return `${run.event.delayMinutes}-minute delay · ${run.event.vehicleId}`
+  if (run.event?.type === "delivered") return `${run.event.orderId} delivered at ${run.event.at}`
+  return "Optimization run"
+}
+
+function HistoryPage({ date, setDate }: ReportDate) {
+  const { data: runs, loading, error, retry } = useDatedReport(date, listPlans)
+  const [search, setSearch] = useState("")
+  const [filter, setFilter] = useState("all")
+  const [selectedId, setSelectedId] = useState<number | null>(null)
+  const selected = runs?.find((run) => run.id === selectedId)
+  const previous = runs?.find((run) => run.id === selected?.previousPlanId)
+  const changes = selected && previous ? comparePlans(previous, selected) : []
+  const visible = runs?.filter((run) =>
+    String(run.id).includes(search.trim().replace(/^#/, "")) &&
+    (filter === "all" || (run.event?.type ?? "optimization") === filter),
+  ) ?? []
+
   return (
     <div className="page">
       <PageHeader
         title="Optimization History"
-        subtitle="Inspect previous route-planning runs and feasibility outcomes."
+        subtitle="Review saved route plans and see what changed after a delivery update."
         actions={
-          <label className="search-input compact">
-            <Icon name="search" size={16} />
-            <input placeholder="Search run ID…" />
-          </label>
+          <ReportDatePicker date={date} setDate={(next) => {
+            setSelectedId(null)
+            setDate(next)
+          }} />
         }
       />
-      <section className="panel table-panel">
-        <div className="panel-head">
-          <div>
-            <h2>Planning runs</h2>
-            <p>Route plans generated with the prototype planner</p>
-          </div>
-          <select>
-            <option>All statuses</option>
-            <option>Feasible</option>
-            <option>Review needed</option>
-          </select>
-        </div>
-        <DataTable
-          headers={[
-            "Run ID",
-            "Run date & time",
-            "Orders",
-            "Vehicles",
-            "Planner method",
-            "Feasibility",
-            "Est. distance",
-            "Est. duration",
-            "Unassigned",
-            "",
-          ]}
-          onRow={(i) => setSelected(historyRuns[i])}
-          rows={historyRuns.map((r) => [
-            <strong>{r.id}</strong>,
-            r.date,
-            r.orders,
-            r.vehicles,
-            r.method,
-            <Status value={r.status} />,
-            r.distance,
-            r.duration,
-            r.unassigned,
-            <Icon name="chevron" size={15} />,
-          ])}
-        />
-      </section>
-      {selected && (
-        <Drawer
-          onClose={() => setSelected(null)}
-          subtitle={selected.date}
-          title={selected.id}
-        >
-          <div className="drawer-status">
-            <Status value={selected.status} />
-            <span>{selected.method}</span>
-          </div>
-          <DetailSection title="Run summary">
-            <Detail label="Orders processed" value={`${selected.orders}`} />
-            <Detail label="Vehicles used" value={`${selected.vehicles}`} />
-            <Detail label="Estimated distance" value={selected.distance} />
-            <Detail label="Estimated duration" value={selected.duration} />
-          </DetailSection>
-          <DetailSection title="Assignment result">
-            <Detail
-              label="Assigned orders"
-              value={`${selected.orders - selected.unassigned}`}
-            />
-            <Detail
-              label="Unassigned orders"
-              value={`${selected.unassigned}`}
-            />
-            <Detail
-              label="Constraint checks"
-              value={
-                selected.status === "Feasible"
-                  ? "Passed for assigned orders"
-                  : "Review required"
-              }
-            />
-          </DetailSection>
-          {selected.unassigned > 0 && (
-            <div className="drawer-callout warning">
-              <Icon name="warning" />
-              <p>
-                {selected.unassigned} order
-                {selected.unassigned > 1 ? "s were" : " was"} excluded because
-                available assignments did not satisfy capacity or time-window
-                constraints.
-              </p>
+      {loading && <p role="status">Loading plan history…</p>}
+      {error && <div><p role="alert">{error}</p><Button onClick={retry}>Retry</Button></div>}
+      {!date && <p>Choose a planning date.</p>}
+      {runs && (
+        <section className="panel table-panel">
+          <div className="panel-head">
+            <div><h2>Saved plans</h2><p>{runs.length} saved for {date}</p></div>
+            <div className="report-filters">
+              <label className="search-input compact">
+                <Icon name="search" size={16} />
+                <input aria-label="Run ID" onChange={(event) => setSearch(event.target.value)} placeholder="Run ID" value={search} />
+              </label>
+              <select aria-label="Run type" className="select" onChange={(event) => setFilter(event.target.value)} value={filter}>
+                <option value="all">All run types</option>
+                <option value="optimization">Optimization</option>
+                <option value="delivered">Delivery completed</option>
+                <option value="delay">Delay reported</option>
+              </select>
             </div>
-          )}
-          <div className="plan-snapshot">
-            <h3>Plan snapshot</h3>
-            {routes.slice(0, selected.vehicles).map((r) => (
-              <div key={r.id}>
-                <i className={`tone-${r.tone}`} />
-                <span>
-                  {r.label} · {r.driver}
-                </span>
-                <strong>{r.distance}</strong>
-              </div>
-            ))}
           </div>
+          {visible.length ? (
+            <DataTable
+              headers={["Run", "Saved at", "Trigger", "Vehicles", "Assigned", "Unassigned", ""]}
+              rows={visible.map((run) => [
+                `#${run.id}`, new Date(run.createdAt).toLocaleString(), describeRun(run), run.routes.length,
+                run.orderCount - run.unassigned.length, run.unassigned.length,
+                <Button ariaLabel={`View plan ${run.id}`} onClick={() => setSelectedId(run.id)}>View</Button>,
+              ])}
+            />
+          ) : <p className="report-empty">{runs.length ? "No runs match these filters." : "No plans saved for this date."}</p>}
+        </section>
+      )}
+      {selected && (
+        <Drawer onClose={() => setSelectedId(null)} subtitle={selected.date} title={`Plan #${selected.id}`}>
+          <DetailSection title="Run summary">
+            <Detail label="Trigger" value={describeRun(selected)} />
+            <Detail label="Method" value={selected.method} />
+            <Detail label="Assigned / total" value={`${selected.orderCount - selected.unassigned.length} / ${selected.orderCount}`} />
+            <Detail label="Estimated distance" value={`${selected.routes.reduce((sum, route) => sum + route.distanceKm, 0)} km`} />
+          </DetailSection>
+          {selected.previousPlanId && (
+            <section className="report-details">
+              <h3>Changes from plan #{selected.previousPlanId}</h3>
+              {changes.length ? (
+                <DataTable headers={["Order", "Before", "After"]} rows={changes} />
+              ) : <p>{previous ? "No changes to stop ETAs or delivery outcomes." : "The previous plan is unavailable."}</p>}
+            </section>
+          )}
+          <section className="report-details">
+            <h3>Stops in this plan</h3>
+            {selected.routes.length ? (
+              <DataTable
+                headers={["Vehicle", "Stop", "Order", "ETA", "Delivered at"]}
+                rows={selected.routes.flatMap((route) => route.stops.map((stop, index) => [
+                  route.vehicleId, index + 1, stop.orderId, stop.eta, stop.completedAt ?? "—",
+                ]))}
+              />
+            ) : <p>No assigned stops.</p>}
+          </section>
+          {selected.unassigned.length > 0 && (
+            <section className="report-details">
+              <h3>Unassigned orders</h3>
+              <DataTable headers={["Order", "Reason"]} rows={selected.unassigned.map((order) => [order.orderId, order.reason])} />
+            </section>
+          )}
         </Drawer>
       )}
     </div>
@@ -2409,8 +2305,8 @@ export default function App() {
                 ))
               }}
             />}
-          {page === "analytics" && <AnalyticsPage />}
-          {page === "history" && <HistoryPage />}
+          {page === "analytics" && <AnalyticsPage date={date} setDate={setDate} />}
+          {page === "history" && <HistoryPage date={date} setDate={setDate} />}
           {page === "settings" && (
             <SettingsPage setSettings={setSettings} settings={settings} />
           )}

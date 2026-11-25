@@ -9,9 +9,9 @@ RouteMind is a logistics operations dashboard prototype for planning daily deliv
 - **Orders:** Browse and filter orders, inspect order details, and add an order.
 - **Fleet:** Review vehicle and driver information and add fleet entries.
 - **Live Tracking:** Mark the next stop delivered and record delays against the saved plan.
-- **Analytics and history:** Explore the illustrative reporting and optimization history views.
+- **Analytics and history:** Review saved plan versions, compare changes after delays, and see delivery outcomes and reported delay totals.
 
-Orders, fleet records, generated plans, and delivery events are stored through an Express API in SQLite. The database starts with demo orders and fleet records. The overview map, analytics, and Optimization History still use illustrative data.
+Orders, fleet records, generated plans, and delivery events are stored through an Express API in SQLite. The database starts with demo orders and fleet records. The overview still shows a sample map and sample metrics.
 
 ## Getting started
 
@@ -59,6 +59,12 @@ The greedy insertion planner prioritizes high-priority orders, then earlier dead
 3. Report a delay and compare the remaining ETAs and the unassigned list. Each update saves a new plan version that preserves completed stops and their recorded times.
 
 The demo uses the depot or the last completed stop as the driver’s location. It adds delays to the driver’s last recorded time, or the shift start if the driver has yet to complete a stop. Replanning keeps pending deliveries on the original vehicle and preserves their relative order. Stops that can no longer fit go to the unassigned list for review.
+
+## Review history and analytics
+
+Open **Optimization History** for the same planning date and view the delay run. Its details show which ETAs or outcomes changed compared with the preceding saved plan, along with the saved stops and unassigned reasons.
+
+Open **Analytics** for that date to see completed, pending, and unassigned orders in the latest saved plan. The delay total comes from recorded driver events. Distance and duration are estimates from the demo travel grid.
 
 To format the project with the configured formatter:
 
