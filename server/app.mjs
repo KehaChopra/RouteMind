@@ -51,10 +51,11 @@ export function createApp({ orders, fleet, plans, delivery }) {
     response.json(plans.analytics(date))
   })
 
-  app.post("/api/plans", (request, response) => {
-    const date = request.body?.date
+  app.post("/api/plans", async (request, response) => {
+    const { date, travelMode = "demo" } = request.body ?? {}
     if (!isDate(date)) return response.status(400).json({ error: "Enter a valid planning date." })
-    const result = delivery.generate(date)
+    if (travelMode !== "demo" && travelMode !== "road") return response.status(400).json({ error: "Select a valid travel mode." })
+    const result = await delivery.generate(date, travelMode)
     response.status(result.status).json(result.plan ?? { error: result.error })
   })
 

@@ -10,6 +10,15 @@ export function createPlansTable(db) {
   `)
 }
 
+export function createPlanTravelTable(db) {
+  db.exec(`
+    CREATE TABLE plan_travel (
+      planId INTEGER PRIMARY KEY REFERENCES plans (id),
+      matrix TEXT NOT NULL
+    ) STRICT;
+  `)
+}
+
 function toPlan(row) {
   return row ? { ...JSON.parse(row.result), id: row.id, createdAt: row.createdAt } : null
 }
@@ -23,9 +32,16 @@ export function preparePlans(db) {
     WHERE plans.date = ? AND plans.id <= ? AND delivery_events.type = 'delay'
   `)
   const insert = db.prepare("INSERT INTO plans (date, createdAt, result) VALUES (?, ?, ?) RETURNING *")
+  const saveTravel = db.prepare("INSERT INTO plan_travel (planId, matrix) VALUES (?, ?)")
+  const findTravel = db.prepare("SELECT matrix FROM plan_travel WHERE planId = ?")
   return {
     latest: (date) => toPlan(latest.get(date)),
     list: (date) => list.all(date).map(toPlan),
+    saveTravel: (planId, matrix) => saveTravel.run(planId, JSON.stringify(matrix)),
+    loadTravel: (planId) => {
+      const row = findTravel.get(planId)
+      return row ? JSON.parse(row.matrix) : null
+    },
     analytics: (date) => {
       const plan = toPlan(latest.get(date))
       if (!plan) return null
@@ -42,11 +58,12 @@ export function preparePlans(db) {
       })
       return {
         planId: plan.id,
+        travelMode: plan.travelMode ?? "demo",
         orderCount: plan.orderCount,
         completed: routes.reduce((sum, route) => sum + route.completed, 0),
         pending: routes.reduce((sum, route) => sum + route.pending, 0),
         unassigned: plan.unassigned.length,
-        distanceKm: routes.reduce((sum, route) => sum + route.distanceKm, 0),
+        distanceKm: Number(routes.reduce((sum, route) => sum + route.distanceKm, 0).toFixed(3)),
         ...delays.get(date, plan.id),
         routes,
       }

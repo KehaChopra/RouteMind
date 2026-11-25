@@ -10,12 +10,15 @@ export type VehicleDraft = Pick<Vehicle, "type" | "capacity" | "driverId"> & {
   registration: string
 }
 
+export type TravelMode = "demo" | "road"
+
 export type RoutePlan = {
   id: number
   date: string
   createdAt: string
   method: string
   travelSource: string
+  travelMode?: TravelMode
   orderCount: number
   previousPlanId?: number
   event?: {
@@ -50,6 +53,7 @@ export type RoutePlan = {
 
 export type PlanAnalytics = {
   planId: number
+  travelMode: TravelMode
   orderCount: number
   completed: number
   pending: number
@@ -118,8 +122,8 @@ export function getAnalytics(date: string, signal: AbortSignal) {
   return request<PlanAnalytics | null>(`/api/analytics?date=${encodeURIComponent(date)}`, { signal })
 }
 
-export function generatePlan(date: string) {
-  return post<RoutePlan>("/api/plans", { date })
+export function generatePlan(date: string, travelMode: TravelMode) {
+  return post<RoutePlan>("/api/plans", { date, travelMode })
 }
 
 export type DeliveryUpdate =

@@ -14,6 +14,7 @@ import {
   type DriverDraft,
   type OrderDraft,
   type RoutePlan,
+  type TravelMode,
   type VehicleDraft,
 } from "./api"
 import { comparePlans } from "./reporting"
@@ -728,11 +729,21 @@ function OverviewPage({
   )
 }
 
+function RoadAttribution() {
+  return (
+    <small className="road-attribution">
+      © <a href="https://openrouteservice.org/">openrouteservice.org by HeiGIT</a>
+      {" · "}Map data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>
+    </small>
+  )
+}
+
 function PlannerPage({ date, setDate }: {
   date: string
   setDate: (date: string) => void
 }) {
   const [plan, setPlan] = useState<RoutePlan | null>(null)
+  const [travelMode, setTravelMode] = useState<TravelMode>("demo")
   const [selected, setSelected] = useState("")
   const [loading, setLoading] = useState(Boolean(date))
   const [optimizing, setOptimizing] = useState(false)
@@ -743,7 +754,11 @@ function PlannerPage({ date, setDate }: {
     if (!date) return
     const controller = new AbortController()
     getLatestPlan(date, controller.signal)
-      .then((saved) => { if (!controller.signal.aborted) setPlan(saved) })
+      .then((saved) => {
+        if (controller.signal.aborted) return
+        setPlan(saved)
+        if (saved) setTravelMode(saved.travelMode ?? "demo")
+      })
       .catch(() => {
         if (!controller.signal.aborted) setError("Could not load the saved plan. Check that the RouteMind API is running.")
       })
@@ -765,7 +780,7 @@ function PlannerPage({ date, setDate }: {
     setOptimizing(true)
     setError("")
     try {
-      setPlan(await generatePlan(date))
+      setPlan(await generatePlan(date, travelMode))
       setSelected("")
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "Could not generate a route plan.")
@@ -791,6 +806,16 @@ function PlannerPage({ date, setDate }: {
                 value={date}
               />
             </label>
+            <select
+              aria-label="Travel data"
+              className="select"
+              disabled={loading || optimizing || Boolean(plan?.event)}
+              onChange={(event) => setTravelMode(event.target.value === "road" ? "road" : "demo")}
+              value={travelMode}
+            >
+              <option value="demo">Demo grid</option>
+              <option value="road">Road routing</option>
+            </select>
             <Button disabled={!date || loading || optimizing || Boolean(plan?.event)} onClick={optimize} variant="primary">
               <Icon name="spark" size={16} />
               {optimizing ? "Optimizing…" : "Optimize Routes"}
@@ -799,13 +824,16 @@ function PlannerPage({ date, setDate }: {
         }
       />
       <div className="planner-note">
-        <span><Icon name="info" size={15} /> Demo travel estimates for sample addresses</span>
-        {plan && <strong>Saved plan #{plan.id} · {plan.method}</strong>}
+        <span><Icon name="info" size={15} /> {travelMode === "road" ? "Road routing sends delivery addresses to openrouteservice." : "Demo travel estimates for sample addresses"}</span>
+        {plan && <strong>Saved plan #{plan.id} · {plan.travelSource}</strong>}
       </div>
+      {plan?.travelMode === "road" && <RoadAttribution />}
       {plan?.event && <p>This plan is in progress. Use Live Tracking to update the remaining stops.</p>}
       {error && <p role="alert">{error}</p>}
       {loading && <p role="status">Loading saved plan…</p>}
-      {optimizing && <p role="status">Checking capacity, delivery windows, and driver shifts…</p>}
+      {optimizing && <p role="status">{travelMode === "road"
+        ? "Loading road travel times and checking route constraints…"
+        : "Checking capacity, delivery windows, and driver shifts…"}</p>}
       {!plan && !loading && !optimizing && !error && (
         <p>{date ? "Select Optimize Routes to create the first plan for this date." : "Choose a planning date."}</p>
       )}
@@ -1660,7 +1688,7 @@ function TrackingPage({ date, setDate, goToPlanner, onDelivered }: {
     <div className="page tracking-page">
       <PageHeader
         title="Live Tracking"
-        subtitle="Record delivery updates and recalculate pending stops using the demo travel estimates."
+        subtitle="Record delivery updates and recalculate pending stops with the travel estimates from the saved plan."
         actions={
           <label className="date-control">
             <Icon name="calendar" size={16} />
@@ -1687,6 +1715,7 @@ function TrackingPage({ date, setDate, goToPlanner, onDelivered }: {
                 : `${plan.event.orderId} delivered at ${plan.event.at}`}</span>
             )}
           </div>
+          {plan.travelMode === "road" && <RoadAttribution />}
           {route ? (
             <section className="panel stop-panel">
               <div className="panel-head">
@@ -1802,6 +1831,7 @@ function AnalyticsPage({ date, setDate }: ReportDate) {
       {data === null && <p>No saved plan for this date. Generate a plan to see its delivery outcomes.</p>}
       {data && (
         <>
+          {data.travelMode === "road" && <RoadAttribution />}
           <div className="analytic-metrics">
             <div>
               <span>Completed</span>
@@ -1915,9 +1945,11 @@ function HistoryPage({ date, setDate }: ReportDate) {
           <DetailSection title="Run summary">
             <Detail label="Trigger" value={describeRun(selected)} />
             <Detail label="Method" value={selected.method} />
+            <Detail label="Travel data" value={selected.travelSource} />
             <Detail label="Assigned / total" value={`${selected.orderCount - selected.unassigned.length} / ${selected.orderCount}`} />
             <Detail label="Estimated distance" value={`${selected.routes.reduce((sum, route) => sum + route.distanceKm, 0)} km`} />
           </DetailSection>
+          {selected.travelMode === "road" && <RoadAttribution />}
           {selected.previousPlanId && (
             <section className="report-details">
               <h3>Changes from plan #{selected.previousPlanId}</h3>

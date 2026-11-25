@@ -2,9 +2,9 @@ import { DatabaseSync } from "node:sqlite"
 import { createDeliveryEventsTable, prepareDelivery } from "./delivery.mjs"
 import { createFleetTables, prepareFleet } from "./fleet.mjs"
 import { createOrdersTable, prepareOrders } from "./orders.mjs"
-import { createPlansTable, preparePlans } from "./plans.mjs"
+import { createPlansTable, createPlanTravelTable, preparePlans } from "./plans.mjs"
 
-export function openDatabase(filename) {
+export function openDatabase(filename, { roadProvider } = {}) {
   const db = new DatabaseSync(filename)
   db.exec("PRAGMA busy_timeout = 5000")
   db.exec("BEGIN IMMEDIATE")
@@ -14,7 +14,8 @@ export function openDatabase(filename) {
     if (version < 2) createFleetTables(db)
     if (version < 3) createPlansTable(db)
     if (version < 4) createDeliveryEventsTable(db)
-    if (version < 4) db.exec("PRAGMA user_version = 4")
+    if (version < 5) createPlanTravelTable(db)
+    if (version < 5) db.exec("PRAGMA user_version = 5")
     db.exec("COMMIT")
   } catch (error) {
     db.exec("ROLLBACK")
@@ -22,5 +23,5 @@ export function openDatabase(filename) {
     throw error
   }
   const stores = { orders: prepareOrders(db), fleet: prepareFleet(db), plans: preparePlans(db) }
-  return { ...stores, delivery: prepareDelivery(db, stores), close: () => db.close() }
+  return { ...stores, delivery: prepareDelivery(db, stores, roadProvider), close: () => db.close() }
 }

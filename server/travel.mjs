@@ -11,13 +11,33 @@ const locations = new Map([
   ["55 holland park road", [-3, -4]],
 ])
 
-export const depot = [0, 0]
-
-export function findLocation(address) {
-  return locations.get(address.trim().toLowerCase().replace(/\s+/g, " "))
+export function addressKey(address) {
+  return address.trim().toLowerCase().replace(/\s+/g, " ")
 }
 
-export function travelLeg(from, to) {
-  const distanceKm = Math.abs(from[0] - to[0]) + Math.abs(from[1] - to[1])
-  return { distanceKm, minutes: distanceKm * 3 }
+export const demoTravel = {
+  depot: [0, 0],
+  source: "Demo travel estimates",
+  missingAddress: "This address is outside the demo travel data.",
+  find: (address) => locations.get(addressKey(address)),
+  leg: (from, to) => {
+    const distanceKm = Math.abs(from[0] - to[0]) + Math.abs(from[1] - to[1])
+    return { distanceKm, minutes: distanceKm * 3 }
+  },
+}
+
+export const roadSource = "openrouteservice road estimates"
+
+export function roadMatrixTravel(snapshot) {
+  const indexes = new Map(snapshot.addresses.map((address, index) => [address, index + 1]))
+  return {
+    depot: 0,
+    source: roadSource,
+    missingAddress: "The routing provider could not locate this address. Enter a full street address.",
+    find: (address) => indexes.get(addressKey(address)),
+    leg: (from, to) => {
+      const leg = snapshot.legs[from]?.[to]
+      return leg ? { distanceKm: leg[0], minutes: leg[1] } : null
+    },
+  }
 }

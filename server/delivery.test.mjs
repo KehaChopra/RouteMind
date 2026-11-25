@@ -76,6 +76,7 @@ test("delivery updates persist and a delay changes pending ETAs while preserving
       assert.equal(analytics.status, 200)
       assert.deepEqual(await analytics.json(), {
         planId: revised.id,
+        travelMode: "demo",
         orderCount: 3,
         completed: 1,
         pending: 1,

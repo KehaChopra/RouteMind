@@ -52,6 +52,14 @@ Keep the API running while using the preview. Run `pnpm test` to check API valid
 
 The greedy insertion planner prioritizes high-priority orders, then earlier deadlines. It checks total vehicle load, time windows for starting delivery service, service durations, and the driver's return to the depot before the shift ends. Travel comes from a fixed demo grid covering the sample addresses. An address outside that grid is reported with a reason. Each run saves a plan snapshot without changing order execution status.
 
+## Use road travel estimates
+
+1. Get an [openrouteservice API key](https://account.heigit.org/). Set `ROUTEMIND_ORS_KEY` in the environment of the API process. Keep the key in the API environment.
+2. Set `ROUTEMIND_DEPOT_COORDINATES` to the depot’s longitude and latitude, separated by a comma. Restart the API with both variables set.
+3. Add orders with full addresses, including the street, city, and postal code where available. Select **Road routing** in **Route Planner**, then click **Optimize Routes**. Test with public locations for the course demo. Road mode sends order addresses and coordinates to the routing provider.
+
+Road mode estimates driving distance and duration for up to 20 distinct addresses per plan. It uses the driving-car profile for all vehicles. The planner explains an unresolved address or a location with no route to and from the depot. A saved road plan keeps its original travel estimates for subsequent delivery updates. Choose **Demo grid** for the offline classroom scenario. © openrouteservice.org by HeiGIT · Map data © OpenStreetMap contributors.
+
 ## Try replanning after a delay
 
 1. Generate a plan for **29 October 2026**, then open **Live Tracking** for the same date.
@@ -64,7 +72,7 @@ The demo uses the depot or the last completed stop as the driver’s location. I
 
 Open **Optimization History** for the same planning date and view the delay run. Its details show which ETAs or outcomes changed compared with the preceding saved plan, along with the saved stops and unassigned reasons.
 
-Open **Analytics** for that date to see completed, pending, and unassigned orders in the latest saved plan. The delay total comes from recorded driver events. Distance and duration are estimates from the demo travel grid.
+Open **Analytics** for that date to see completed, pending, and unassigned orders in the latest saved plan. The delay total comes from recorded driver events. Distance and duration come from the travel estimates used to generate that plan.
 
 To format the project with the configured formatter:
 
